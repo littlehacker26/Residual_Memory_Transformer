@@ -8,7 +8,6 @@ from config import Config
 import numpy as np
 from transformers import T5Tokenizer
 from checkpointing import CheckpointManager
-from t5 import get_lm_representation 
 import utils
 from tqdm import tqdm
 import math

@@ -4,7 +4,6 @@ from os.path import join
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 from transformers import AutoModelWithLMHead, AutoTokenizer, top_k_top_p_filtering
 
-from info_nce import InfoNCE
 import torch
 from torch.nn import GRU
 

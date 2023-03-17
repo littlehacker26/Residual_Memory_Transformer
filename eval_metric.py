@@ -1,5 +1,5 @@
 from eval_metrics.cider.cider import Cider
-from eval_metrics.spice.spice import Spice
+# from eval_metrics.spice.spice import Spice
 from fast_bleu import BLEU, SelfBLEU
 from numpy import *
 import numpy as np
