@@ -1,0 +1,4 @@
+check_point/
+result/
+.ipynb_checkpoints/
+**/__pycache__
