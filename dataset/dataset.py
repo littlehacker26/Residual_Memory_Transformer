@@ -30,9 +30,12 @@ class C2Gen(Dataset):
             keyword = ' '.join(r["row"]["keywords"])
             context =  r["row"]["context"]
             concept = '#'.join(r["row"]["keywords"])
-            
             keyword = self.tokenizer(keyword, return_tensors="np")['input_ids'][0].tolist()
             context = self.tokenizer(context, return_tensors="np")['input_ids'][0].tolist()
+            
+            # keyword = self.tokenizer("<|endoftext|> " + keyword, return_tensors="np")['input_ids'][0][1:].tolist()
+            # context = self.tokenizer("<|endoftext|> " + context, return_tensors="np")['input_ids'][0][1:].tolist()
+
             
             self.record.append({
                         "concept_set_input_ids":keyword,
@@ -59,7 +62,6 @@ class CommonGenDataset(Dataset):
         self.tokenizer = tokenizer
         self.is_training = is_training
         np.set_printoptions(threshold=sys.maxsize)
-        self.start_prompt = "$generation$"
         self.args = args
 
         
@@ -100,8 +102,10 @@ class CommonGenDataset(Dataset):
                             c= c[:-1]                    
   
                         if self.args.pretrain_plm == "gpt":
-                            c_output_ids = self.tokenizer(c, return_tensors="np")['input_ids'][0].tolist()                            
-                        else: 
+                            # c_output_ids = self.tokenizer("<|endoftext|> " + c, return_tensors="np")['input_ids'][0][1:].tolist()
+                            c_output_ids = self.tokenizer(c, return_tensors="np")['input_ids'][0].tolist()
+
+                        else:
                             c_output_ids = self.tokenizer(c, return_tensors="np")['input_ids'][0].tolist()
                         
                                     
@@ -141,13 +145,14 @@ def data_wrapper(dataset, tokenizer, plm_type):
     
     
     max_concept_len = max([len(d['concept_set_input_ids']) for d in dataset])
-
     
     concept_set_input = np.full((batch_size, max_concept_len), _PAD, dtype=np.int64)
     
     for i, d in enumerate(dataset):
         # concept_set_input[i, :len(d['concept_set_input_ids'])] = d['concept_set_input_ids']
         data = d['concept_set_input_ids'][:max_concept_len]
+        # concept_set_input[i, -len(data):] = data
+        
         concept_set_input[i, :len(data)] = data
         
     new_dataset['concept_set_input_ids'] = torch.from_numpy(concept_set_input)
@@ -170,6 +175,6 @@ def get_data_loader(dataset, batch_size):
     collate_fn = lambda d: data_wrapper(d, dataset.tokenizer, dataset.args.pretrain_plm)
     return DataLoader(dataset, 
         batch_size=batch_size,
-        num_workers=0,
+        num_workers=2,
         collate_fn=collate_fn
     )

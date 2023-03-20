@@ -188,10 +188,10 @@ class Distill_Tuning(torch.nn.Module):
         
         if context== None:
             # context_len = prompts_ids.shape[1]
-            decoder_input_ids = prompts_ids
+            decoder_input_ids = None
         else:
             # context_len = prompts_ids.shape[1] + context.shape[1]
-            decoder_input_ids = torch.cat([prompts_ids, context], dim=1)
+            decoder_input_ids = context
 
         
         return_dict = {}
@@ -204,18 +204,17 @@ class Distill_Tuning(torch.nn.Module):
        
         
         prompt_tokens = [self.pseudo_token_id]
-        queries = self.get_query_head(decoder_input_ids, prompt_tokens)        
+        queries = self.get_query_head(prompts_ids, prompt_tokens, decoder_input_ids)        
         inputs_embeds = self.embed_hybird_inputs(queries, prompts_ids)
         
         while cur_len <= max_length:
             attention_mask = (queries != self.tokenizer.pad_token_id).to(queries.device).bool()
-             
                 
             output_decoder = self.model(inputs_embeds=inputs_embeds,
                                     attention_mask=attention_mask,
                                     output_hidden_states = True,
                                     return_dict= True)
-            decoder_hidden = output_decoder.hidden_states[-self.args.num_layer-1]   # batch*seq*hidden
+            decoder_hidden = output_decoder.hidden_states[-5]   # batch*seq*hidden
             
             att_mask = self._generate_square_subsequent_mask(decoder_hidden.shape[1], self.args.device)
         
@@ -232,15 +231,19 @@ class Distill_Tuning(torch.nn.Module):
             next_tokens = next_tokens.mul(eos_flag)
             next_tokens[next_tokens == 0] = self.tokenizer.eos_token_id
             
-            decoder_input_ids = torch.cat([decoder_input_ids, next_tokens.unsqueeze(1)], dim=1)
+            if decoder_input_ids==None:
+                decoder_input_ids = next_tokens.unsqueeze(1)
+                
+            else:
+                decoder_input_ids = torch.cat([decoder_input_ids, next_tokens.unsqueeze(1)], dim=1)
             
-            queries = self.get_query_head(prompts_ids, prompt_tokens, decoder_input_ids[:,prompts_ids.shape[1]:])
+            queries = self.get_query_head(prompts_ids, prompt_tokens, decoder_input_ids)
             
             inputs_embeds = self.embed_hybird_inputs(queries, prompts_ids)
 
             cur_len = cur_len + 1
         
-        return_dict = {"generated_tokens":decoder_input_ids[:, prompts_ids.shape[1]:]}
+        return_dict = {"generated_tokens":decoder_input_ids}
         return return_dict
     
     
@@ -286,8 +289,6 @@ class Distill_Tuning(torch.nn.Module):
         hidden_states = inputs_embeds + position_embeds 
         
         return hidden_states.detach()
-        
-
     
     
     def forward(self, x_hs, x_ts):
@@ -317,7 +318,7 @@ class Distill_Tuning(torch.nn.Module):
                                     attention_mask=attention_mask,
                                     output_hidden_states = True,
                                     return_dict= True)
-        decoder_hidden = output_decoder.hidden_states[-self.args.num_layer-1]   #batch*seq*hidden
+        decoder_hidden = output_decoder.hidden_states[-5]   #batch*seq*hidden
         
         att_mask = self._generate_square_subsequent_mask(decoder_hidden.shape[1],self.args.device).bool()
         

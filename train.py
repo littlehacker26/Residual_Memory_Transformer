@@ -100,7 +100,7 @@ def construct_generation_args():
     parser.add_argument("--embedding_checkpoint", type=str, default=None)
     parser.add_argument("--task_name", type=str, default="sentiment",choices = ["detoxic","sentiment"])
 
-    parser.add_argument("--pseudo_token", type=str, default='x')
+    parser.add_argument("--pseudo_token", type=str, default='xxx')
     
     parser.add_argument("--batch_size", type=int, default= 100)
     parser.add_argument("--epoch", type=int, default= 50)
@@ -209,7 +209,6 @@ def run_eval_ppl(args, model, eval_data_iter, tokenizer, only_test=False, output
     
     with torch.no_grad():
         for batch in tqdm(eval_data_iter):
-                 
 
             x_token = batch["concept_set_input_ids"].to(args.device).long()
             input_ids =  batch["c_output_ids"].to(args.device).long()
@@ -318,7 +317,7 @@ def create_model_t5(model_name_or_path):
     
 def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, test_long_loader, optimizer, my_lr_scheduler):
     
-    result_name_path = f"../result/{args.train_stage}_{args.tuning_mode}_training_samples_{args.training_sample_num}_{args.temperature}.csv"
+    result_name_path = f"../result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_training_samples_{args.training_sample_num}_{args.temperature}.csv"
         
     best_score = 0.0   
     early_stop=0
@@ -340,6 +339,7 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
                                     
                     x_token = batch["concept_set_input_ids"].to(args.device).long()
                     input_ids =  batch["c_output_ids"].to(args.device).long()
+                    
                     
                     _,output =  model(x_token, input_ids)
                     loss = output
@@ -395,7 +395,7 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
     
 def control_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler):
     
-    result_name_path = f"../result/{args.train_stage}_{args.tuning_mode}_training_samples_{args.training_sample_num}_{args.temperature}.csv"
+    result_name_path = f"../result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_training_samples_{args.training_sample_num}_{args.temperature}.csv"
         
     best_score = 0.0   
     early_stop=0
@@ -453,7 +453,7 @@ def control_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader,
 def general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler):
     
     
-    result_name_path = f"../result/{args.train_stage}_{args.tuning_mode}_training_samples_{args.training_sample_num}_{args.temperature}.csv"
+    result_name_path = f"../result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_training_samples_{args.training_sample_num}_{args.temperature}.csv"
         
     best_score = 0.0   
     early_stop=0
@@ -475,6 +475,7 @@ def general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader,
                                     
                     x_token = batch["concept_set_input_ids"].to(args.device).long()
                     input_ids =  batch["c_output_ids"].to(args.device).long()
+                    
                     
                     _,output =  model(x_token, input_ids)
                     loss = output
@@ -523,10 +524,8 @@ if __name__ == "__main__":
     torch.backends.cudnn.deterministic = True# as reproducibility docs
     set_seed(seed)
 
-    # if args.pretrain_plm == "gpt":
     
-    tokenizer = create_model_gpt(args.model_name_or_path)
-    # copy_vocab = T5CopyVocabulary(args.copy_vocab_path, tokenizer)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     tokenizer.pad_token = tokenizer.eos_token
     
     
@@ -569,7 +568,6 @@ if __name__ == "__main__":
         else:
             my_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=2, gamma=0.5)
             
-    
     
     print("dataset loaded ok!")
     if args.validation or args.test:

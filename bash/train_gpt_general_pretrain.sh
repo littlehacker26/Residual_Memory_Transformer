@@ -15,7 +15,7 @@ model_type="Residual_Tuning"
 
 top_p=0.5
 training_sample_num=1000000
-step_size=5000000
+step_size=2500000
 temperature=0.1
 num_layer=4
 lr=5e-5
