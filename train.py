@@ -338,10 +338,10 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
                     model.train()
                                     
                     x_token = batch["concept_set_input_ids"].to(args.device).long()
-                    input_ids =  batch["c_output_ids"].to(args.device).long()
+                    input_ids =  batch["cat_text"].to(args.device).long()
+                    mask_ids =  batch["mask_ids"].to(args.device).long()                    
                     
-                    
-                    _,output =  model(x_token, input_ids)
+                    _,output =  model(x_token, input_ids, mask_ids)
                     loss = output
                     print("the loss is:", loss)
                     

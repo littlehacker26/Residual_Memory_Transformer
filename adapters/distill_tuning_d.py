@@ -188,10 +188,10 @@ class Distill_Tuning(torch.nn.Module):
         
         if context== None:
             # context_len = prompts_ids.shape[1]
-            decoder_input_ids = None
+            decoder_input_ids = prompts_ids
         else:
             # context_len = prompts_ids.shape[1] + context.shape[1]
-            decoder_input_ids = context
+            decoder_input_ids = torch.cat([prompts_ids,context ], dim=1)
 
         
         return_dict = {}
@@ -199,29 +199,25 @@ class Distill_Tuning(torch.nn.Module):
         
         control_input_ids = prompts_ids
         attention_mask_control = (control_input_ids!= self.tokenizer.pad_token_id).to(prompts_ids.device).bool()
-        position_ids_control = attention_mask_control.long().cumsum(-1)- 1
+        position_ids_control = attention_mask_control.long().cumsum(-1)
         control_hidden = self.get_gpt_embeddings(control_input_ids, position_ids_control)
        
         
-        prompt_tokens = [self.pseudo_token_id]
-        queries = self.get_query_head(prompts_ids, prompt_tokens, decoder_input_ids)        
-        inputs_embeds = self.embed_hybird_inputs(queries, prompts_ids)
-        
         while cur_len <= max_length:
-            attention_mask = (queries != self.tokenizer.pad_token_id).to(queries.device).bool()
-                
-            output_decoder = self.model(inputs_embeds=inputs_embeds,
+            attention_mask = (decoder_input_ids != self.tokenizer.pad_token_id).to(decoder_input_ids.device).bool()
+            position_ids = attention_mask.long().cumsum(-1)
+            
+            output_decoder = self.model(input_ids = decoder_input_ids,
                                     attention_mask=attention_mask,
+                                    position_ids=position_ids,
                                     output_hidden_states = True,
                                     return_dict= True)
             decoder_hidden = output_decoder.hidden_states[-5]   # batch*seq*hidden
             
-            att_mask = self._generate_square_subsequent_mask(decoder_hidden.shape[1], self.args.device)
         
-            logits = 0.9*self.prompt_encoder(tgt=decoder_hidden, memory = control_hidden, tgt_mask = ~attention_mask, memory_mask=~attention_mask_control, att_mask=att_mask) + 0.1*output_decoder.logits
+            logits = 0.9*self.prompt_encoder(tgt=decoder_hidden, memory = control_hidden, tgt_mask = ~attention_mask, memory_mask=~attention_mask_control, att_mask=None) + 0.1*output_decoder.logits
             
             next_token_logits = logits[:, -1, :]
-            
             next_token_logits_ = self.top_k_top_p_filtering(next_token_logits,  top_k=0, top_p= self.args.top_p, filter_value=BIG_CONST)
 
             next_token_logits_prob = torch.softmax(next_token_logits_, dim=1)
@@ -230,20 +226,13 @@ class Distill_Tuning(torch.nn.Module):
             eos_flag = eos_flag.mul((next_tokens != self.tokenizer.eos_token_id).type(torch.uint8))# if flag = 0, it means the generation is over 
             next_tokens = next_tokens.mul(eos_flag)
             next_tokens[next_tokens == 0] = self.tokenizer.eos_token_id
+
+            decoder_input_ids = torch.cat([decoder_input_ids, next_tokens.unsqueeze(1)], dim=1)
             
-            if decoder_input_ids==None:
-                decoder_input_ids = next_tokens.unsqueeze(1)
-                
-            else:
-                decoder_input_ids = torch.cat([decoder_input_ids, next_tokens.unsqueeze(1)], dim=1)
-            
-            queries = self.get_query_head(prompts_ids, prompt_tokens, decoder_input_ids)
-            
-            inputs_embeds = self.embed_hybird_inputs(queries, prompts_ids)
 
             cur_len = cur_len + 1
         
-        return_dict = {"generated_tokens":decoder_input_ids}
+        return_dict = {"generated_tokens":decoder_input_ids[:, prompts_ids.shape[1]:]}
         return return_dict
     
     
@@ -291,30 +280,24 @@ class Distill_Tuning(torch.nn.Module):
         return hidden_states.detach()
     
     
-    def forward(self, x_hs, x_ts):
-        # construct query ids
-        # prompt_tokens = [self.pseudo_token_id]
-        prompt_tokens = [self.pseudo_token_id]
-
-                
+    def forward(self, x_hs, x_ts,mask):
+        
+                 
         control_input_ids = x_hs
         attention_mask_control = (control_input_ids!= self.tokenizer.pad_token_id).to(x_hs.device).bool()
-        position_ids_control = attention_mask_control.long().cumsum(-1)-1
+        position_ids_control = attention_mask_control.long().cumsum(-1)
         control_hidden = self.get_gpt_embeddings(control_input_ids, position_ids_control)
         
         
-        decoder_input_ids = self.get_query_head(x_hs, prompt_tokens, x_ts)
-        inputs_embeds = self.embed_hybird_inputs(decoder_input_ids, x_hs)
-        attention_mask = (decoder_input_ids!= self.tokenizer.pad_token_id).bool().to(x_hs.device)
-        
-        label_mask = torch.zeros([decoder_input_ids.shape[0],decoder_input_ids.shape[1]]).to(decoder_input_ids.device)
-        label_mask[:,-x_ts.shape[1]:] = 1
+        decoder_input_ids = x_ts
+        attention_mask = (decoder_input_ids!= self.tokenizer.pad_token_id).to(x_ts.device).bool()
         
         labels = torch.clone(decoder_input_ids)
-        labels.masked_fill_(label_mask==0, -100)
-        labels.masked_fill_(attention_mask==0, -100)
+        labels.masked_fill_(mask==0, -100)
+        labels.masked_fill_(attention_mask==False, -100)
+        
 
-        output_decoder = self.model(inputs_embeds=inputs_embeds,
+        output_decoder = self.model(input_ids=decoder_input_ids,
                                     attention_mask=attention_mask,
                                     output_hidden_states = True,
                                     return_dict= True)
