@@ -77,7 +77,7 @@ def addCsv(filename,dict_inf):
 
 def save_model(args, model, epoch, metric):
     
-    ckpt_name = "template_{}_epoch_{}_metric_{}.ckpt".format(str(args.template).replace(' ', ''),epoch ,metric)
+    ckpt_name = "layer_{}_epoch_{}_metric_{}.ckpt".format(str(args.num_layer).replace(' ', ''),epoch ,metric)
     
     best_ckpt = {'embedding': model.prompt_encoder.state_dict(),
                 'ckpt_name': ckpt_name,

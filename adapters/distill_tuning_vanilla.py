@@ -47,6 +47,7 @@ class Distill_Tuning(torch.nn.Module):
         self.hidden_size = self.embeddings.embedding_dim
         
         self.pseudo_token_id = self.tokenizer.convert_tokens_to_ids(self.args.pseudo_token)
+
         self.spell_length = sum(self.template)
         self.prompt_encoder = PromptEncoder(self.template, self.hidden_size, self.tokenizer, args)
  
@@ -105,75 +106,35 @@ class Distill_Tuning(torch.nn.Module):
         return logits
     
 
-#     def get_query_head(self, x_h, prompt_tokens, x_t = None):
-        
-#         mix_tensor_head =  torch.zeros(x_h.shape[0], self.template[0]).to(x_h.device).fill_(prompt_tokens[0]).long()
-#         mix_tensor_tail =  torch.zeros(x_h.shape[0], self.template[1]).to(x_h.device).fill_(prompt_tokens[0]).long()
-
-#         mix_tensor = torch.cat([mix_tensor_head,x_h,mix_tensor_tail], dim=1)
-        
-#         if x_t != None:
-#             return  torch.cat([mix_tensor, x_t], dim =1)
-#         else:
-#             return mix_tensor
-        
-        
-        
-#     def embed_hybird_inputs(self, queries, x_h):
-      
-#         bz = queries.shape[0]
-        
-#         queries_for_embedding = queries.clone()
-                
-#         raw_embeds = self.embeddings(queries_for_embedding)
-        
-#         replace_embeds = self.prompt_encoder().expand(x_h.shape[0],-1,-1).contiguous()
-        
-#         raw_embeds[:,:self.template[0],:] = replace_embeds[:,:self.template[0],:]
-#         raw_embeds[:,self.template[0]+x_h.shape[1]:self.spell_length+x_h.shape[1],:] = replace_embeds[:,self.template[0]:,:]
-        
-#         return raw_embeds
-    
-    
-    
     def get_query_head(self, x_h, prompt_tokens, x_t = None):
+        
+        mix_tensor_head =  torch.zeros(x_h.shape[0], self.template[0]).to(x_h.device).fill_(prompt_tokens[0]).long()
+        mix_tensor_tail =  torch.zeros(x_h.shape[0], self.template[1]).to(x_h.device).fill_(prompt_tokens[0]).long()
 
-            prompt_tensor_head = torch.tensor(prompt_tokens* (self.spell_length)).to(self.args.device)
-
-            trans_inputs = []
-
-            index_musk =  (x_h == self.tokenizer.pad_token_id).type(torch.uint8) # only calculte the token which is not eos
-
-            valid_number_length = torch.sum(index_musk, 1)
-
-            for index, seq in zip(valid_number_length, x_h):
-                if index == x_h.shape[1]:
-                    trans_inputs.append(torch.cat([prompt_tensor_head,seq]))
-                else:
-                    trans_inputs.append(torch.cat([seq[:index], prompt_tensor_head, seq[index:]]))
-
-            res = torch.stack(trans_inputs, dim=0)
-            if x_t != None:
-                # x_t = x_t.unsqueeze(1)
-                return  torch.cat([res, x_t], dim =1)
-            else:
-                return res        
-
-
-    def embed_hybird_inputs(self, queries):
+        mix_tensor = torch.cat([mix_tensor_head,x_h,mix_tensor_tail], dim=1)
+        
+        if x_t != None:
+            return  torch.cat([mix_tensor, x_t], dim =1)
+        else:
+            return mix_tensor
+        
+        
+        
+    def embed_hybird_inputs(self, queries, x_h):
+      
         bz = queries.shape[0]
+        
         queries_for_embedding = queries.clone()
-
+        
         queries_for_embedding[(queries == self.pseudo_token_id)] = self.tokenizer.unk_token_id
+        
         raw_embeds = self.embeddings(queries_for_embedding)
-
-        blocked_indices = (queries == self.pseudo_token_id).type(torch.uint8).nonzero().reshape((bz, self.spell_length, 2))[:, :, 1]  # bz
-
-        replace_embeds = self.prompt_encoder()
-        for bidx in range(bz):
-            for i in range(self.prompt_encoder.spell_length):
-                raw_embeds[bidx, blocked_indices[bidx, i], :] = replace_embeds[i, :]
-    
+        
+        replace_embeds = self.prompt_encoder().expand(x_h.shape[0],-1,-1).contiguous()
+        
+        raw_embeds[:,:self.template[0],:] = replace_embeds[:,:self.template[0],:]
+        raw_embeds[:,self.template[0]+x_h.shape[1]:self.spell_length+x_h.shape[1],:] = replace_embeds[:,self.template[0]:,:]
+        
         return raw_embeds
     
     
@@ -202,16 +163,13 @@ class Distill_Tuning(torch.nn.Module):
         prompt_tokens = [self.pseudo_token_id]
         
         queries = self.get_query_head(prompts_ids, prompt_tokens,context)
-        inputs_embeds = self.embed_hybird_inputs(queries)
+        inputs_embeds = self.embed_hybird_inputs(queries, prompts_ids)
         
         attention_mask = torch.cat([queries!= self.tokenizer.pad_token_id, torch.ones([prompts_ids.shape[0], prompts_ids.shape[1]+self.prompt_encoder.spell_length + max_length]).long().to(self.args.device)], dim=1)
         
-        position_ids = attention_mask.long().cumsum(-1)- 1
-        position_ids.masked_fill_(attention_mask == 0, 0)    
         
         while cur_len <= max_length:
             outputs = self.model(inputs_embeds=inputs_embeds,
-                                 position_ids = position_ids[:,:inputs_embeds.shape[1]],
                                  attention_mask = attention_mask[:,:inputs_embeds.shape[1]],
                                  return_dict=True)
                 
@@ -230,7 +188,7 @@ class Distill_Tuning(torch.nn.Module):
             
             queries = self.get_query_head(prompts_ids, prompt_tokens, output_ids[:,prompts_ids.shape[1]:])
             
-            inputs_embeds = self.embed_hybird_inputs(queries)
+            inputs_embeds = self.embed_hybird_inputs(queries, prompts_ids)
 
             cur_len = cur_len + 1
         
@@ -246,12 +204,8 @@ class Distill_Tuning(torch.nn.Module):
         logits = []
         labels = []
       
-        inputs_embeds = self.embed_hybird_inputs(queries)
+        inputs_embeds = self.embed_hybird_inputs(queries, x_hs)
         attention_mask = (queries!= self.tokenizer.pad_token_id).long().to(x_hs.device)
-        position_ids = attention_mask.long().cumsum(-1)- 1
-        position_ids.masked_fill_(attention_mask == 0, 0)
-        
-        
         label_mask = torch.zeros([queries.shape[0],queries.shape[1]]).to(queries.device)
 
         label_mask[:,-x_ts.shape[1]:] = 1
@@ -261,7 +215,6 @@ class Distill_Tuning(torch.nn.Module):
         labels.masked_fill_(attention_mask==0, -100)
 
         output = self.model(inputs_embeds=inputs_embeds,
-                            position_ids = position_ids,
                             attention_mask=attention_mask,
                             labels = labels)
         return None, output.loss

@@ -48,7 +48,7 @@ class Residual_Model(nn.Module):
         for layer_module in  self.decoder_block:
             tgt = layer_module(tgt =tgt , memory=memory, tgt_key_padding_mask = tgt_mask, memory_key_padding_mask=memory_mask, tgt_mask=att_mask)
             
-        return self.lm_head(tgt)    
+        return self.lm_head(tgt)
     
     
 

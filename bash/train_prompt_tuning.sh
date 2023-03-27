@@ -15,7 +15,7 @@ tuning_mode='fp'
 model_type="Vanilla_Prompt_Tuning"
 
 top_p=0.5
-training_sample_num=32000
+training_sample_num=32004
 step_size=7000000
 temperature=0.1
 num_layer=4
@@ -24,7 +24,7 @@ lr=1e-5
 out_dir="../check_point/general"
 template="(8,4)"
 batch_size=64
-max_epoch=10
+max_epoch=6
 
 
 for seed in 2 3
