@@ -83,7 +83,7 @@ from transformers.trainer_utils import get_last_checkpoint, is_main_process
 from transformers import GPT2LMHeadModel, AutoTokenizer, AutoModelForMaskedLM
 
 from adapters.distill_tuning_d import Distill_Tuning as Prompt_Residual_Tuning
-from adapters.distill_tuning_vanilla import Distill_Tuning as Vanilla_Prompt_Tuning
+from adapters.distill_tuning_vanilla import GPT2_Tuning as Vanilla_Prompt_Tuning
 from adapters.distill_tuning import Distill_Tuning as Residual_Tuning
 
 
@@ -226,8 +226,6 @@ def run_eval_ppl(args, model, eval_data_iter, tokenizer, only_test=False, output
             
     return np.nanmean(ppls)
             
-    
-    
 
 def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path=None):
     model.eval()
@@ -239,17 +237,38 @@ def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path
     with torch.no_grad():
         for batch in tqdm(eval_data_iter):
                  
-            x_token = batch["concept_set_input_ids"].to(args.device).long()
-            input_ids =  batch["c_output_ids"].to(args.device).long()
+            x_token = batch["input_ids"].to(args.device).long()
+            context =  batch["output_ids"].to(args.device).long()
+            encode_inputs =  batch["encode_input"].to(args.device).long() 
+            # encode_inputs =  batch["input_ids"].to(args.device).long() 
+
 
             gts += batch["item"]
             concept_set += batch["concept_set"]
             
             if only_test == True:
-                input_ids = None
+                input_ids = x_token
                 
-            result = model.generate(prompts_ids = x_token, max_length=20, context=input_ids)
-            text = tokenizer.batch_decode(result["generated_tokens"], skip_special_tokens= True)
+            else:
+                input_ids = torch.cat([x_token, context], dim=1)
+                
+            attention_mask = (input_ids!= tokenizer.pad_token_id)
+
+            output_sequences = model.generate(
+            input_ids=input_ids,
+            attention_mask= attention_mask,
+            encoder_hidden_states = encode_inputs,
+            max_length =20 + input_ids.shape[1],
+            num_beams =1,
+            top_p = 0.5,
+            top_k = 0,
+            no_repeat_ngram_size = 3,            
+            do_sample= True, # disable sampling to test if batching affects output
+            )
+            
+            text = []
+            for i in range(len(output_sequences)):
+                text.append(tokenizer.decode(output_sequences[i][x_token.shape[1]:],skip_special_tokens= True))
             
             text = [t.strip() for t in text]
             print(text)
@@ -447,11 +466,17 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
             for batch_idx, batch in tqdm(enumerate(train_data_loader)):
                     model.train()
                                     
-                    x_token = batch["concept_set_input_ids"].to(args.device).long()
-                    input_ids =  batch["c_output_ids"].to(args.device).long()
+                                    
+                    input_ids =  batch["cat_text"].to(args.device).long()
+                    mask_ids =  batch["mask_ids"].to(args.device).long()
+                    encode_inputs =  batch["encode_input"].to(args.device).long()
+                    # encode_inputs =  batch["input_ids"].to(args.device).long()
+
+
                     
-                    _,output =  model(x_token, input_ids)
-                    loss = output
+                    output =  model(encoder_hidden_states=encode_inputs, input_ids = input_ids, token_type_ids = mask_ids)
+                    
+                    loss = output.loss
                     print("the loss is:", loss)
                     tot_loss += loss.item()
 
@@ -466,12 +491,12 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
                     
             my_lr_scheduler.step()
 
-            if epoch+1>=1:
-                outpus = run_eval(args, model, dev_data_loader, tokenizer, only_test=True, output_path=args.output_path)
-                coverage = outpus["coverage"]
-                ppl = outpus["ppl"]
+            if epoch+1>=2:
+                # outpus = run_eval(args, model, dev_data_loader, tokenizer, only_test=True, output_path=args.output_path)
+                output = run_eval(args, model, test_long_loader, tokenizer, only_test=False, output_path=args.output_path)
+
+                coverage = output["l_coverage"]
                 print("coverage:", coverage)
-                print("ppl:", ppl)
 
             else:
                 coverage = 0.0
@@ -482,9 +507,10 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
                 print("coverage:", coverage)
                 best_score = coverage
                 outpus_test = run_eval(args, model, test_data_loader, tokenizer, only_test=True, output_path=args.output_path)
-                outpus_long = run_eval(args, model, test_long_loader, tokenizer, only_test=False, output_path=args.output_path)
+                # outpus_long = run_eval(args, model, test_long_loader, tokenizer, only_test=False, output_path=args.output_path)
+                outpus_long = output
                 print(outpus_test)
-                print(outpus_long)
+                # print(outpus_long)
             else:
                 early_stop+=1
                 if early_stop>3:
@@ -568,7 +594,57 @@ def general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader,
                         addCsv(result_name_path,in_csv)
 
                         tot_loss = 0
-                        step_count=0    
+                        step_count=0 
+                        
+                        
+                        
+def prepare_inputs_for_generation(input_ids, past_key_values=None, **kwargs):
+    token_type_ids = kwargs.get("token_type_ids", None)
+    # only last token for inputs_ids if past_key_values is defined in kwargs
+    if past_key_values:
+        input_ids = input_ids[:, -1].unsqueeze(-1)
+        if token_type_ids is not None:
+            token_type_ids = token_type_ids[:, -1].unsqueeze(-1)
+
+    attention_mask = kwargs.get("attention_mask", None)
+    position_ids = kwargs.get("position_ids", None)
+
+    if attention_mask is not None and position_ids is None:
+        # create position_ids on the fly for batch generation
+        position_ids = attention_mask.long().cumsum(-1) - 1
+        position_ids.masked_fill_(attention_mask == 0, 1)
+        if past_key_values:
+            position_ids = position_ids[:, -1].unsqueeze(-1)
+    else:
+        position_ids = None
+        
+
+    if "encoder_hidden_states" in kwargs:  # we only want to use them in the 1st generation step
+        
+        encoder_data = kwargs.get("encoder_hidden_states", None)
+        # print(encoder_data.shape)
+        
+        if encoder_data.shape[0] != input_ids.shape[0]:
+            
+            # print("input_ids:",input_ids.shape)
+            beam_size = int(input_ids.shape[0]/encoder_data.shape[0])
+            # print("beam_size:", beam_size)
+            encoder_data = encoder_data.repeat_interleave(beam_size, dim=0)
+        
+        model_inputs = {"encoder_hidden_states": encoder_data}
+        
+        
+    model_inputs.update({
+        "past_key_values": past_key_values,
+        "use_cache": kwargs.get("use_cache"),
+        "position_ids": position_ids,
+        "attention_mask": attention_mask,
+        "token_type_ids": token_type_ids,
+        "input_ids":input_ids
+    })
+    # print(model_inputs["encoder_hidden_states"])
+    return model_inputs
+
 
 
 
@@ -594,35 +670,35 @@ if __name__ == "__main__":
     
     
     if args.model_type=="Prompt_Residual_Tuning":
-        model = Prompt_Residual_Tuning(args, args.template)
+        
+        model = Prompt_Residual_Tuning.from_pretrained(args.model_name_or_path)
+        model.init_post(args)
     
     elif args.model_type=="Residual_Tuning":
         model = Residual_Tuning(args, args.template)
         
     elif args.model_type=="Vanilla_Prompt_Tuning":
-        model = Vanilla_Prompt_Tuning(args, args.template)
+        
+        model = Vanilla_Prompt_Tuning.from_pretrained(args.model_name_or_path)
+        model.init_post(args)
         
     else:
         raise Exception("the task is out of scope!")
     
-    if args.check_point_load != None:
+    if args.check_point_load != None and  hasattr(model, 'prompt_encoder'):
         model.prompt_encoder.load_state_dict(load_prompt(args.check_point_load))
         print("load the embedding checkpoint successfully!")
         
     model.to(args.device)
+    
+    model.prepare_inputs_for_generation = prepare_inputs_for_generation
+
             
     print("args.batch_size:",args.batch_size)
     
     if args.train:
-        if args.tuning_mode == "pt":
-            params = [{'params': model.prompt_encoder.parameters()}]
-            if hasattr(model, 'prompt_encoder_'):
-                params.append({'params': model.prompt_encoder_.parameters()})
-        else:
-            params = [{'params': model.prompt_encoder.parameters()},{'params': model.model.parameters()}]
-            if hasattr(model, 'prompt_encoder_'):
-                params.append({'params': model.prompt_encoder_.parameters()})
-            
+
+        params = [{'params': model.parameters()}]            
             
         optimizer = torch.optim.AdamW(params,  weight_decay= args.weight_decay,lr=args.lr)
         
