@@ -27,16 +27,15 @@ class C2Gen(Dataset):
         
         data = json.load(open(json_path,"r"))
         for r in data["rows"]:            
-            keyword = ' '.join(r["row"]["keywords"])
+            keyword = ', '.join(r["row"]["keywords"])
             context =  r["row"]["context"]
             concept = '#'.join(r["row"]["keywords"])
             
             # keyword = self.tokenizer(keyword, return_tensors="np")['input_ids'][0].tolist()
             # context = self.tokenizer(context, return_tensors="np")['input_ids'][0].tolist()
             
-            keyword_encode = self.tokenizer(f"The text should include: {keyword} <s>", return_tensors="np")['input_ids'][0].tolist()
+            keyword_encode = self.tokenizer(f"The text should include:{keyword}. <bos>", return_tensors="np")['input_ids'][0].tolist()
             context = self.tokenizer(context, return_tensors="np")['input_ids'][0].tolist()
-            
             # context = self.tokenizer("<|endoftext|> " + context, return_tensors="np")['input_ids'][0][1:].tolist()
             
             self.record.append({
@@ -87,12 +86,11 @@ class CommonGenDataset(Dataset):
                 
             for l in tqdm(lines):
                 item = json.loads(l.strip())
-                concept_set = ' '.join(item['concept_set'].split('#'))
+                concept_set = ', '.join(item['concept_set'].split('#'))
 
-                concept_set_input_ids = self.tokenizer(f"The text should include: {concept_set} <s>", return_tensors="np")['input_ids'][0].tolist()
+                concept_set_input_ids = self.tokenizer(f"The text should include:{concept_set}. <bos>", return_tensors="np")['input_ids'][0].tolist()
 
                 gt = copy.deepcopy(item['scene'])
- 
                 if self.is_training:
                     for c in item['scene']:
                         c = c.strip()

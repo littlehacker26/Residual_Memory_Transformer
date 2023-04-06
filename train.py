@@ -8,7 +8,6 @@ from dataset.e2e_dataset import Seq2SeqDataset, seq_get_data_loader
 import argparse
 import torch
 import torch.nn as nn
-from config import Config
 import numpy as np
 from transformers import T5Tokenizer
 from checkpointing import CheckpointManager
@@ -48,7 +47,7 @@ from transformers import GPT2LMHeadModel, AutoTokenizer, AutoModelForMaskedLM, T
 
 
 import numpy as np
-import torch, math, time, os, argparse, copy, re
+import torch, math, time, os, argparse, re
 import torch.nn as nn
 from tqdm import tqdm
 import torch.nn.functional as F
@@ -58,6 +57,8 @@ from collections import defaultdict
 from adapters.common import AdapterConfig
 from data import ConditionalGenerationDataset, GenerationDataset
 import datetime
+
+import copy as _copy
 
 from torch.utils.data import Dataset, DataLoader
 from transformers.modeling_utils import PreTrainedModel, Conv1D, prune_conv1d_layer, SequenceSummary
@@ -137,6 +138,8 @@ def construct_generation_args():
     parser.add_argument("--step_size", type=int, default=10000)
     parser.add_argument("--step_log", type=int, default=10000)
     parser.add_argument("--num_layer", type=int, default=2) 
+    parser.add_argument("--residual_layer", type=int, default=4) 
+
 
 
     # parser.add_argument("--pattern", type=str, default="vanilla", choices=["dynamic_prompt_max","dynamic_prompt_mean","dynamic_prompt_hybird","vanilla"])
@@ -148,17 +151,17 @@ def construct_generation_args():
 
 
 
-    parser.add_argument("--prompt_pad_length", type=int, default= 10)
     # parser.add_argument("--top_k", type=int, default=3)
-    parser.add_argument("--ranking_scope", type=int, default=50)
     parser.add_argument("--top_p", type=float, default=0.95)
+    parser.add_argument("--memory_p", type=float, default=0.5)
+
 
     
     parser.add_argument("--output_path", type=str, default="./eval")
     parser.add_argument("--mode", type=str, default="ctg", choices=["ctg","train","classifer"])
     parser.add_argument("--evaluate_file", type=str, default="../our_text")
     parser.add_argument("--evaluate_outfile", type=str, default="./eval/our/result.csv")
-    parser.add_argument("--max_epoch", type=int, default=10) 
+    parser.add_argument("--max_epoch", type=int, default=10)
     
    
     parser.add_argument("--check_point_load", type=str, default= None)
@@ -171,8 +174,6 @@ def construct_generation_args():
     parser.add_argument("--long_test_path", type=str, default= None)
 
     
-    
-
     parser.add_argument('--train', action='store_true')
     parser.add_argument('--validation', action='store_true')
     parser.add_argument('--test', action='store_true')
@@ -259,7 +260,7 @@ def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path
             attention_mask= attention_mask,
             encoder_hidden_states = encode_inputs,
             max_length =20 + input_ids.shape[1],
-            num_beams =1,
+            num_beams =4,
             top_p = 0.5,
             top_k = 0,
             no_repeat_ngram_size = 3,            
@@ -271,6 +272,7 @@ def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path
                 text.append(tokenizer.decode(output_sequences[i][x_token.shape[1]:],skip_special_tokens= True))
             
             text = [t.strip() for t in text]
+            
             print(text)
             res += text
             
@@ -353,28 +355,6 @@ def seq_run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_
     return {"bleu":score_bleu,"self_bleu":score_self_bleu, "ppl": score_ppl}
 
 
-    
-def create_model_gpt(model_name_or_path):
-    
-    if model_name_or_path:
-        
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-    else:
-        print("Model path is not set!!!")        
-        
-    return tokenizer
-
-
-def create_model_t5(model_name_or_path):
-    
-    if model_name_or_path:
-        
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-    else:
-        print("Model path is not set!!!")        
-        
-    return tokenizer
-
 
 def task_seq2seq(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loade, optimizer, my_lr_scheduler):
     
@@ -446,7 +426,7 @@ def task_seq2seq(args, model, tokenizer, train_data_loader, dev_data_loader, tes
     
 def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, test_long_loader, optimizer, my_lr_scheduler):
     
-    result_name_path = f"../result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_training_samples_{args.training_sample_num}_{args.temperature}.csv"
+    result_name_path = f"../result/{args.model_type}_seed_{args.seed}_{args.tuning_mode}_training_samples_{args.training_sample_num}_memory_p_{args.memory_p}.csv"
         
     best_score = 0.0   
     early_stop=0
@@ -471,8 +451,6 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
                     mask_ids =  batch["mask_ids"].to(args.device).long()
                     encode_inputs =  batch["encode_input"].to(args.device).long()
                     # encode_inputs =  batch["input_ids"].to(args.device).long()
-
-
                     
                     output =  model(encoder_hidden_states=encode_inputs, input_ids = input_ids, token_type_ids = mask_ids)
                     
@@ -491,7 +469,7 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
                     
             my_lr_scheduler.step()
 
-            if epoch+1>=2:
+            if epoch+1>=1:
                 # outpus = run_eval(args, model, dev_data_loader, tokenizer, only_test=True, output_path=args.output_path)
                 output = run_eval(args, model, test_long_loader, tokenizer, only_test=False, output_path=args.output_path)
 
@@ -508,7 +486,8 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
                 best_score = coverage
                 outpus_test = run_eval(args, model, test_data_loader, tokenizer, only_test=True, output_path=args.output_path)
                 # outpus_long = run_eval(args, model, test_long_loader, tokenizer, only_test=False, output_path=args.output_path)
-                outpus_long = output
+                outpus_long = _copy.deepcopy(output)
+                print(outpus_long)
                 print(outpus_test)
                 # print(outpus_long)
             else:
@@ -521,9 +500,6 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
     in_csv.update(outpus_test)
     in_csv.update(outpus_long)
     addCsv(result_name_path, in_csv)
-    
-    
-
     
     
 def general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler):
@@ -555,7 +531,6 @@ def general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader,
                     x_token = batch["concept_set_input_ids"].to(args.device).long()
                     input_ids =  batch["c_output_ids"].to(args.device).long()
                     
-                    
                     _,output =  model(x_token, input_ids)
                     loss = output
                     print("the loss is:", loss)
@@ -573,9 +548,7 @@ def general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader,
                     step_log += args.batch_size
                 
                     print(f"epoch is {epoch}, and step size is:{step}")
-                    
-                    if step> 8001000:
-                        break
+
                     
                     if step_log>args.step_log:
                         step_log = 0
@@ -594,7 +567,10 @@ def general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader,
                         addCsv(result_name_path,in_csv)
 
                         tot_loss = 0
-                        step_count=0 
+                        step_count=0
+                        
+                    if step> 8001000:
+                        exit()
                         
                         
                         
@@ -668,6 +644,8 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     tokenizer.pad_token = tokenizer.eos_token
     
+
+    
     
     if args.model_type=="Prompt_Residual_Tuning":
         
@@ -696,23 +674,21 @@ if __name__ == "__main__":
             
     print("args.batch_size:",args.batch_size)
     
+    
+    if args.validation or args.test:
+        run_eval(args, model, dev_data_loader, tokenizer, only_test=True, output_path=args.output_path)
+        exit()
+    
     if args.train:
 
-        params = [{'params': model.parameters()}]            
-            
+        params = [{'params': model.parameters()}]
         optimizer = torch.optim.AdamW(params,  weight_decay= args.weight_decay,lr=args.lr)
         
-        
         if args.train_stage == "fine_tuning":
-            my_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size= int(args.epoch/2), gamma=0.2)
+            my_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size= 3, gamma=0.2)
         else:
             my_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=2, gamma=0.5)
             
-    
-    print("dataset loaded ok!")
-    if args.validation or args.test:
-        run_eval(args, model, dev_data_loader, tokenizer, only_test=True, output_path=args.output_path)
-        
         
     if args.train_stage == "fine_tuning":
         
@@ -724,10 +700,10 @@ if __name__ == "__main__":
             train_data_loader = get_data_loader(train_data, args.batch_size)
 
             dev_data = CommonGenDataset(args.dev_path, tokenizer, is_training=False, args=args)
-            dev_data_loader = get_data_loader(dev_data, 100)
+            dev_data_loader = get_data_loader(dev_data, 50)
 
             test_data = CommonGenDataset(args.test_path, tokenizer, is_training=False, args=args)
-            test_data_loader = get_data_loader(test_data, 100)
+            test_data_loader = get_data_loader(test_data, 50)
 
             long_dis_data = C2Gen(args.long_test_path, tokenizer, args=args)
             test_long_loader = get_data_loader(long_dis_data, 1)
@@ -741,10 +717,10 @@ if __name__ == "__main__":
             train_data_loader = seq_get_data_loader(train_data, args.batch_size)
 
             dev_data = Seq2SeqDataset(args.dev_path, tokenizer, type_path="valid", args=args)
-            dev_data_loader = seq_get_data_loader(dev_data, 100)
+            dev_data_loader = seq_get_data_loader(dev_data, 50)
 
             test_data = Seq2SeqDataset(args.test_path, tokenizer, type_path="test",  args=args)
-            test_data_loader = seq_get_data_loader(test_data, 100)
+            test_data_loader = seq_get_data_loader(test_data, 50)
 
             task_seq2seq(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler)
             

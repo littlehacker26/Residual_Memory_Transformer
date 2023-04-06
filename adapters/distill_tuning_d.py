@@ -36,7 +36,7 @@ class Residual_Model(nn.Module):
         )
             
         self.decoder_block = nn.ModuleList(
-            [nn.TransformerDecoderLayer(d_model=input_size, nhead=n_head, batch_first=True) for i in range(n_layer)]
+            [nn.TransformerDecoderLayer(d_model=input_size, nhead=n_head, batch_first=True) for i in range(1)]
         )
         
         self.lm_head = nn.Linear(input_size, 50257,bias=False)
@@ -70,11 +70,16 @@ class Distill_Tuning(GPT2LMHeadModel):
         self.tokenizer.pad_token = self.tokenizer.eos_token
                 
         self.embeddings = self.get_input_embeddings()
-        self.position_embedings = self.transformer.wpe
+        # self.embeddings.requires_grad = False
+        # print(self.embeddings.weight.requires_grad)
         
-        self.hidden_size = self.embeddings.embedding_dim
-      
-        self.prompt_encoder = Residual_Model(input_size = self.hidden_size, n_head = 8, n_layer=self.args.num_layer)
+        self.position_embedings = self.transformer.wpe
+        # self.position_embedings.requires_grad = False
+        # print(self.position_embedings.weight.requires_grad)
+
+        
+        self.hidden_size = self.embeddings.embedding_dim      
+        self.prompt_encoder = Residual_Model(input_size = self.hidden_size, n_head = 8, n_layer=self.args.residual_layer)
         
     
     def load_prompt(self, embedding_checkpoint):
@@ -152,13 +157,12 @@ class Distill_Tuning(GPT2LMHeadModel):
         
         decoder_hidden = output_decoder.hidden_states[-self.args.num_layer -1] #batch*seq*hidden
         
-        
         if self.training:
             att_mask = self._generate_square_subsequent_mask(decoder_hidden.shape[1],self.args.device).bool()
         else:
             att_mask = None
         
-        logits = 0.3*self.prompt_encoder(tgt=decoder_hidden, memory=control_hidden, tgt_mask=~attention_mask, memory_mask=~attention_mask_control, att_mask=att_mask) + 0.7*output_decoder.logits
+        logits = self.args.memory_p*self.prompt_encoder(tgt=decoder_hidden, memory=control_hidden, tgt_mask=~attention_mask, memory_mask=~attention_mask_control, att_mask=att_mask) + (1-self.args.memory_p)*output_decoder.logits
         
         if self.training:
             labels = torch.clone(decoder_input_ids)
