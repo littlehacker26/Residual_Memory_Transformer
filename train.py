@@ -238,35 +238,46 @@ def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path
             x_token = batch["input_ids"].to(args.device).long()
             context =  batch["output_ids"].to(args.device).long()
             encode_inputs =  batch["encode_input"].to(args.device).long() 
-            # encode_inputs =  batch["input_ids"].to(args.device).long() 
 
 
             gts += batch["item"]
             concept_set += batch["concept_set"]
             
             if only_test == True:
-                input_ids = x_token
+                input_ids = None
                 
             else:
-                input_ids = torch.cat([x_token, context], dim=1)
+                input_ids = context
+    
                 
-            attention_mask = (input_ids!= tokenizer.pad_token_id)
+            if input_ids == None:
+                input_ids = torch.zeros(encode_inputs.shape[0], 1).to(args.device).fill_(tokenizer.pad_token_id).long()            
+                attention_mask = torch.ones(encode_inputs.shape[0], 1).to(args.device).bool() 
+                
+            else:
+                eos_musk = torch.ones(encode_inputs.shape[0], 1).to(args.device).bool()
+                attention_mask = (input_ids!= tokenizer.pad_token_id).bool()
+                attention_mask = torch.cat([eos_musk,attention_mask], dim=1).bool()
+
+                eos = torch.zeros(encode_inputs.shape[0], 1).to(args.device).fill_(tokenizer.pad_token_id).long()
+                input_ids = torch.cat([eos,input_ids], dim=1)
+                
 
             output_sequences = model.generate(
-            input_ids=input_ids,
-            attention_mask= attention_mask,
-            encoder_hidden_states = encode_inputs,
-            max_length =20 + input_ids.shape[1],
-            num_beams =4,
-            top_p = 0.5,
-            top_k = 0,
-            no_repeat_ngram_size = 3,            
-            do_sample= True, # disable sampling to test if batching affects output
+                input_ids=input_ids,
+                encoder_hidden_states = encode_inputs,
+                attention_mask = attention_mask,
+                max_length =20 + input_ids.shape[1],
+                num_beams =4,
+                top_p = 0.5,
+                top_k = 0,
+                no_repeat_ngram_size = 3,            
+                do_sample= True, # disable sampling to test if batching affects output
             )
             
             text = []
             for i in range(len(output_sequences)):
-                text.append(tokenizer.decode(output_sequences[i][x_token.shape[1]:],skip_special_tokens= True))
+                text.append(tokenizer.decode(output_sequences[i],skip_special_tokens= True))
             
             text = [t.strip() for t in text]
             
@@ -326,7 +337,6 @@ def seq_run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_
             
             gts += tokenizer.batch_decode(output_ids,skip_special_tokens= True)
             
-                
             result = model.generate(prompts_ids = input_ids, max_length=args.max_length, context= None)
             text = tokenizer.batch_decode(result["generated_tokens"], skip_special_tokens= True)
             text = [t.strip() for t in text]            
@@ -443,8 +453,7 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
             for batch_idx, batch in tqdm(enumerate(train_data_loader)):
                     model.train()
                                     
-                                    
-                    input_ids =  batch["cat_text"].to(args.device).long()
+                    input_ids =  batch["output_ids"].to(args.device).long()
                     mask_ids =  batch["mask_ids"].to(args.device).long()
                     encode_inputs =  batch["encode_input"].to(args.device).long()
                     # encode_inputs =  batch["input_ids"].to(args.device).long()
@@ -571,52 +580,7 @@ def general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader,
                         
                         
                         
-def prepare_inputs_for_generation(input_ids, past_key_values=None, **kwargs):
-    token_type_ids = kwargs.get("token_type_ids", None)
-    # only last token for inputs_ids if past_key_values is defined in kwargs
-    if past_key_values:
-        input_ids = input_ids[:, -1].unsqueeze(-1)
-        if token_type_ids is not None:
-            token_type_ids = token_type_ids[:, -1].unsqueeze(-1)
 
-    attention_mask = kwargs.get("attention_mask", None)
-    position_ids = kwargs.get("position_ids", None)
-
-    if attention_mask is not None and position_ids is None:
-        # create position_ids on the fly for batch generation
-        position_ids = attention_mask.long().cumsum(-1) - 1
-        position_ids.masked_fill_(attention_mask == 0, 1)
-        if past_key_values:
-            position_ids = position_ids[:, -1].unsqueeze(-1)
-    else:
-        position_ids = None
-        
-
-    if "encoder_hidden_states" in kwargs:  # we only want to use them in the 1st generation step
-        
-        encoder_data = kwargs.get("encoder_hidden_states", None)
-        # print(encoder_data.shape)
-        
-        if encoder_data.shape[0] != input_ids.shape[0]:
-            
-            # print("input_ids:",input_ids.shape)
-            beam_size = int(input_ids.shape[0]/encoder_data.shape[0])
-            # print("beam_size:", beam_size)
-            encoder_data = encoder_data.repeat_interleave(beam_size, dim=0)
-        
-        model_inputs = {"encoder_hidden_states": encoder_data}
-        
-        
-    model_inputs.update({
-        "past_key_values": past_key_values,
-        "use_cache": kwargs.get("use_cache"),
-        "position_ids": position_ids,
-        "attention_mask": attention_mask,
-        "token_type_ids": token_type_ids,
-        "input_ids":input_ids
-    })
-    # print(model_inputs["encoder_hidden_states"])
-    return model_inputs
 
 
 
@@ -666,7 +630,6 @@ if __name__ == "__main__":
         
     model.to(args.device)
     
-    model.prepare_inputs_for_generation = prepare_inputs_for_generation
 
             
     print("args.batch_size:",args.batch_size)
@@ -678,7 +641,7 @@ if __name__ == "__main__":
     
     if args.train:
 
-        params = [{'params': model.parameters()}]
+        params = [{'params': model.prompt_encoder.parameters()}]
         optimizer = torch.optim.AdamW(params,  weight_decay= args.weight_decay,lr=args.lr)
         
         if args.train_stage == "fine_tuning":

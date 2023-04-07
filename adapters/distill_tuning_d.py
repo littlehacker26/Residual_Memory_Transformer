@@ -70,16 +70,13 @@ class Distill_Tuning(GPT2LMHeadModel):
         self.tokenizer.pad_token = self.tokenizer.eos_token
                 
         self.embeddings = self.get_input_embeddings()
-        # self.embeddings.requires_grad = False
-        # print(self.embeddings.weight.requires_grad)
         
         self.position_embedings = self.transformer.wpe
-        # self.position_embedings.requires_grad = False
-        # print(self.position_embedings.weight.requires_grad)
-
         
         self.hidden_size = self.embeddings.embedding_dim      
         self.prompt_encoder = Residual_Model(input_size = self.hidden_size, n_head = 8, n_layer=self.args.residual_layer)
+        self.transformer.requires_grad = False
+        
         
     
     def load_prompt(self, embedding_checkpoint):
@@ -104,6 +101,55 @@ class Distill_Tuning(GPT2LMHeadModel):
         hidden_states = inputs_embeds + position_embeds 
         
         return hidden_states.detach()
+    
+    
+    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, **kwargs):
+        token_type_ids = kwargs.get("token_type_ids", None)
+        # only last token for inputs_ids if past_key_values is defined in kwargs
+        if past_key_values:
+            input_ids = input_ids[:, -1].unsqueeze(-1)
+            if token_type_ids is not None:
+                token_type_ids = token_type_ids[:, -1].unsqueeze(-1)
+
+        attention_mask = kwargs.get("attention_mask", None)
+        position_ids = kwargs.get("position_ids", None)
+        
+                    
+        if attention_mask is not None and position_ids is None:
+            # create position_ids on the fly for batch generation
+            position_ids = attention_mask.long().cumsum(-1) - 1
+            position_ids.masked_fill_(attention_mask == 0, 1)
+            if past_key_values:
+                position_ids = position_ids[:, -1].unsqueeze(-1)
+        else:
+            position_ids = None
+
+
+        if "encoder_hidden_states" in kwargs:  # we only want to use them in the 1st generation step
+
+            encoder_data = kwargs.get("encoder_hidden_states", None)
+
+            if encoder_data.shape[0] != input_ids.shape[0]:
+
+                # print("input_ids:",input_ids.shape)
+                beam_size = int(input_ids.shape[0]/encoder_data.shape[0])
+                # print("beam_size:", beam_size)
+                encoder_data = encoder_data.repeat_interleave(beam_size, dim=0)
+
+            model_inputs = {"encoder_hidden_states": encoder_data}
+            
+
+
+        model_inputs.update({
+            "past_key_values": past_key_values,
+            "use_cache": kwargs.get("use_cache"),
+            "position_ids": position_ids,
+            "attention_mask": attention_mask,
+            "token_type_ids": token_type_ids,
+            "input_ids":input_ids
+        })
+        # print(model_inputs["encoder_hidden_states"])
+        return model_inputs
     
     
     def forward(
@@ -137,8 +183,16 @@ class Distill_Tuning(GPT2LMHeadModel):
         position_ids_control = torch.clamp(position_ids_control, min=0)
         control_hidden = self.get_gpt_embeddings(control_input_ids, position_ids_control)
         
-        decoder_input_ids = input_ids
-        attention_mask = (decoder_input_ids!= self.tokenizer.pad_token_id).to(decoder_input_ids.device).bool()
+        
+        
+        if input_ids!= None and self.training:
+            eos_musk = torch.ones(control_input_ids.shape[0], 1).to(self.args.device).bool()
+            attention_mask = (input_ids!= self.tokenizer.pad_token_id).bool()
+            attention_mask = torch.cat([eos_musk,attention_mask], dim=1).bool()
+            
+            eos = torch.zeros(control_input_ids.shape[0], 1).to(self.args.device).fill_(self.tokenizer.pad_token_id).long()
+            input_ids = torch.cat([eos,input_ids], dim=1)
+                        
         
         output_decoder = super().forward(input_ids = input_ids,
                                          past_key_values= past_key_values,
@@ -165,8 +219,7 @@ class Distill_Tuning(GPT2LMHeadModel):
         logits = self.args.memory_p*self.prompt_encoder(tgt=decoder_hidden, memory=control_hidden, tgt_mask=~attention_mask, memory_mask=~attention_mask_control, att_mask=att_mask) + (1-self.args.memory_p)*output_decoder.logits
         
         if self.training:
-            labels = torch.clone(decoder_input_ids)
-            labels.masked_fill_(token_type_ids==0, -100)
+            labels = torch.clone(input_ids)
             labels.masked_fill_(attention_mask==False, -100)
             
             loss_fct = nn.CrossEntropyLoss(ignore_index=-100)

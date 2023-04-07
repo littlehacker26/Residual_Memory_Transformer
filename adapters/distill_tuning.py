@@ -145,9 +145,6 @@ class Distill_Tuning(torch.nn.Module):
         return  loss
     
     
-
-    
-    
     def forward(self, x_hs, x_ts):
 
         control_input_ids = x_hs
