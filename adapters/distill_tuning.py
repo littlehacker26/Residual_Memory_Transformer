@@ -82,6 +82,9 @@ class Distill_Tuning(torch.nn.Module):
             
         
         self.loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
+        self.kl_loss = nn.KLDivLoss(reduction="batchmean")
+
+        print("layer of resiudal:", self.args.residual_layer)
         
         self.prompt_encoder = Residual_Model(input_size = self.hidden_size, n_head = 8, n_layer=self.args.residual_layer)
         
@@ -120,21 +123,29 @@ class Distill_Tuning(torch.nn.Module):
         """
         # return torch.triu(torch.full((sz, sz), float('-inf'), device=device), diagonal=1)
         return torch.triu(torch.full((sz, sz), True, device=device), diagonal=1)
-    
-    
-    def prepare_fixed_GPT2_information(self, inputs_ids):
-        
-        
-        attention_mask = (inputs_ids!= self.tokenizer.pad_token_id).to(inputs_ids.device).bool()
 
-        position_ids = attention_mask.long().cumsum(-1)- 1
-        position_ids.masked_fill_(attention_mask == 0, 0)
+    
+    def KL_loss(self, input_x, input_y, attention_mask):
+        """
+        compute the KL loss
+        """
+        m = torch.flatten(attention_mask)
+        indices = torch.nonzero(m).squeeze(-1)
         
-        return self.model(input_ids= inputs_ids,
-                            attention_mask= attention_mask,
-                            position_ids=position_ids,
-                            output_hidden_states = True,
-                            return_dict= True).logits
+        x = input_x.reshape(-1,input_x.shape[-1])
+        x = torch.index_select(x, 0, indices)
+            
+        y = input_y.reshape(-1,input_y.shape[-1])
+        y = torch.index_select(y, 0, indices)
+        
+        input_data = F.log_softmax(x, dim=1)
+        target = F.softmax(y, dim=1)
+        loss = self.kl_loss(input_data, target)
+        
+        return  loss
+    
+    
+
     
     
     def forward(self, x_hs, x_ts):
@@ -158,12 +169,10 @@ class Distill_Tuning(torch.nn.Module):
                                         attention_mask=attention_mask,
                                         output_hidden_states = True,
                                         return_dict= True)
-            
-            decoder_hidden = output_decoder.hidden_states[-self.args.num_layer-1]  #batch*seq*hidden
+            decoder_hidden = output_decoder.hidden_states[0] #batch*seq*hidden
             
         
         att_mask = self._generate_square_subsequent_mask(decoder_hidden.shape[1],self.args.device).bool()
-        
       
         logits = self.prompt_encoder(tgt=decoder_hidden, memory=control_hidden, tgt_mask=~attention_mask, memory_mask=~attention_mask_control, att_mask=att_mask)
 
@@ -171,5 +180,8 @@ class Distill_Tuning(torch.nn.Module):
         shift_label = labels[:,1:].reshape(-1)
         
         loss = self.loss_fct(shift_loigt, shift_label)
+        
+        
+        kl_loss = self.KL_loss(logits, output_decoder.logits, attention_mask)
                     
-        return logits, loss #+kl_loss
+        return logits, loss+kl_loss

@@ -10,7 +10,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 from transformers import T5Tokenizer
-from checkpointing import CheckpointManager
 import utils
 from tqdm import tqdm
 import math
@@ -18,7 +17,6 @@ import os, sys
 from speaksee import evaluation
 import spacy
 import random
-from constraint import CBSConstraint
 from dataset.diversity import distinct_n
 import json
 import string
@@ -55,7 +53,6 @@ import torch.nn.functional as F
 from utils import *
 from collections import defaultdict
 from adapters.common import AdapterConfig
-from data import ConditionalGenerationDataset, GenerationDataset
 import datetime
 
 import copy as _copy
