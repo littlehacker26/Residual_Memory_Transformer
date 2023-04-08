@@ -209,7 +209,7 @@ class Distill_Tuning(GPT2LMHeadModel):
                                          output_hidden_states=True,
                                          return_dict=True)
         
-        decoder_hidden = output_decoder.hidden_states[-self.args.num_layer -1] #batch*seq*hidden
+        decoder_hidden = output_decoder.hidden_states[0] #batch*seq*hidden
         
         if self.training:
             att_mask = self._generate_square_subsequent_mask(decoder_hidden.shape[1],self.args.device).bool()

@@ -7,7 +7,7 @@ pretrain_path_val="/home2/zhanghanqing/formatted_wiki_val"
 long_test_path="../../data/c2gen.json"
 
 model_name_or_path="/home2/zhanghanqing/pretrained_model/gpt2/large"
-check_point_load="../check_point/pretrain/prompt_model/layer_36_epoch_4000128_metric_2.03.ckpt"
+check_point_load="../check_point/pretrain/prompt_model/layer_0_epoch_2000064_metric_2.83.ckpt"
 #check_point_load="../check_point/general/prompt_model/template_(8,4)_epoch_7500096_metric_1.86.ckpt"
 
 pretrain_plm="gpt"
