@@ -16,6 +16,8 @@ from transformers import AutoTokenizer
 
 from .models import get_embedding_layer, create_model, _create_model
 from .prompt_encoder import PromptEncoder
+from .transformer_decoder import Transformer_Decoder
+
 
 import torch
 import torch.nn as nn
@@ -27,6 +29,7 @@ SMALL_CONST = 1e-10
 BIG_CONST = -1e15
 
 
+
 class Residual_Model(nn.Module):
     def __init__(self, input_size, n_head, n_layer):
         super(Residual_Model, self).__init__()
@@ -36,22 +39,28 @@ class Residual_Model(nn.Module):
         )
             
         self.decoder_block = nn.ModuleList(
-            [nn.TransformerDecoderLayer(d_model=input_size, nhead=n_head, batch_first=True) for i in range(1)]
+            [Transformer_Decoder(d_model=input_size, nhead=n_head, batch_first=True) for i in range(n_layer)]
         )
         
         self.lm_head = nn.Linear(input_size, 50257,bias=False)
-        
+                
         
     def forward(self, tgt, memory, tgt_mask, memory_mask, att_mask):
         
         for layer_module in  self.encoder_block:
             memory = layer_module(src = memory, src_key_padding_mask = memory_mask)
             
-            
+        inp = tgt[0]
+        
         for layer_module in  self.decoder_block:
-            tgt = layer_module(tgt =tgt , memory=memory, tgt_key_padding_mask = tgt_mask, memory_key_padding_mask=memory_mask, tgt_mask=att_mask)
-            
-        return self.lm_head(tgt)
+            inp = layer_module(tgt =inp, tgt_ =tgt[-1], memory=memory, tgt_key_padding_mask = tgt_mask, memory_key_padding_mask=memory_mask, tgt_mask=att_mask)
+ 
+        return self.lm_head(inp)
+
+
+
+    
+
 
     
 
@@ -209,10 +218,10 @@ class Distill_Tuning(GPT2LMHeadModel):
                                          output_hidden_states=True,
                                          return_dict=True)
         
-        decoder_hidden = output_decoder.hidden_states[0] #batch*seq*hidden
+        decoder_hidden = output_decoder.hidden_states #batch*seq*hidden
         
         if self.training:
-            att_mask = self._generate_square_subsequent_mask(decoder_hidden.shape[1],self.args.device).bool()
+            att_mask = self._generate_square_subsequent_mask(decoder_hidden[0].shape[1],self.args.device).bool()
         else:
             att_mask = None
         
