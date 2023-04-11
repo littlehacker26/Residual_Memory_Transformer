@@ -17,7 +17,6 @@ from copy import deepcopy
 
 
 
-
 class WikiDataset_General(Dataset):
 
     def __init__(self, json_path, tokenizer, is_training=False, args=None):
@@ -116,10 +115,9 @@ class WikiDataset_General(Dataset):
 
     def __getitem__(self, index):
         item = self.record[index]
-        return item
+        return item    
+
     
-
-
 
 class WikiDataset(Dataset):
 
@@ -172,7 +170,7 @@ class WikiDataset(Dataset):
                         "concept_set_input_ids":random.sample(concept_set_input_ids, int(len(concept_set_input_ids)*0.2)),
                         "c_output_ids":concept_set_input_ids})
             
-        return res            
+        return res    
                     
 
     def __len__(self):

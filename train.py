@@ -270,6 +270,7 @@ def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path
                 max_length =20 + input_ids.shape[1],
                 num_beams =4,
                 top_p = 0.5,
+                repetition_penalty=1.25,
                 top_k = 0,
                 no_repeat_ngram_size = 3,            
                 do_sample= True, # disable sampling to test if batching affects output
@@ -511,9 +512,9 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
 def general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler):
     
     
-    result_name_path = f"../pretrain_result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_training_samples_{args.training_sample_num}_{args.temperature}.csv"
+    result_name_path = f"../pretrain_result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_residual_layer_{args.residual_layer}_{args.temperature}.csv"
     
-    result_ppl_path = f"../pretrain_result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_num_layer{args.num_layer}_ppl.csv"
+    result_ppl_path = f"../pretrain_result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_residual_layer{args.residual_layer}_ppl.csv"
         
     best_score = 0.0   
     early_stop=0

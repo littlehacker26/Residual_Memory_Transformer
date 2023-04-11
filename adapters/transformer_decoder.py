@@ -15,8 +15,6 @@ from torch.nn import Linear
 from torch.nn import LayerNorm
 
 
-
-
 class Transformer_Decoder(nn.TransformerDecoderLayer):
     
         
@@ -36,22 +34,20 @@ class Transformer_Decoder(nn.TransformerDecoderLayer):
         
         self.self_attn_casual = MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first,
                                             **factory_kwargs)
-        
-
-        
+                
         self.norm4 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
         self.dropout4 = Dropout(dropout)
 
         
         
-    def _sa_block_casual(self, x: Tensor,
+    def _sa_block_casual(self, x: Tensor, memory: Tensor,
                   attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor]) -> Tensor:
         
-        
-        x = self.self_attn_casual(x, x, x,
+        x = self.self_attn_casual(x, memory, memory,
                            attn_mask=attn_mask,
                            key_padding_mask=key_padding_mask,
                            need_weights=False)[0]
+        
         return self.dropout4(x)
     
     
@@ -79,12 +75,12 @@ class Transformer_Decoder(nn.TransformerDecoderLayer):
             
             if self.norm_first:
                 x = x + self._sa_block(self.norm1(x), tgt_mask, tgt_key_padding_mask)
-                x = x +  self._sa_block_casual(self.norm4(x1), tgt_mask, tgt_key_padding_mask)
+                x = x +  self._sa_block_casual(self.norm4(x), x1, tgt_mask, tgt_key_padding_mask)
                 x = x + self._mha_block(self.norm2(x), memory, memory_mask, memory_key_padding_mask)
                 x = x + self._ff_block(self.norm3(x))
             else:
                 x = self.norm1(x + self._sa_block(x, tgt_mask, tgt_key_padding_mask))
-                x = self.norm4(x+ self._sa_block_casual(x1, tgt_mask, tgt_key_padding_mask))
+                x = self.norm4(x+ self._sa_block_casual(x, x1, tgt_mask, tgt_key_padding_mask))
                 x = self.norm2(x + self._mha_block(x, memory, memory_mask, memory_key_padding_mask))
                 x = self.norm3(x + self._ff_block(x))
 

@@ -57,11 +57,6 @@ class Residual_Model(nn.Module):
  
         return self.lm_head(inp)
 
-
-
-    
-
-
     
 
 class Distill_Tuning(GPT2LMHeadModel):
