@@ -31,15 +31,15 @@ BIG_CONST = -1e15
 
 
 class Residual_Model(nn.Module):
-    def __init__(self, input_size, n_head, n_layer):
+    def __init__(self, input_size, n_head, n_layer_encoder, n_layer_decoder):
         super(Residual_Model, self).__init__()
         
         self.encoder_block = nn.ModuleList(
-            [nn.TransformerEncoderLayer(d_model=input_size, nhead=n_head, batch_first=True) for i in range(n_layer)]
+            [nn.TransformerEncoderLayer(d_model=input_size, nhead=n_head, batch_first=True) for i in range(n_layer_encoder)]
         )
             
         self.decoder_block = nn.ModuleList(
-            [Transformer_Decoder(d_model=input_size, nhead=n_head, batch_first=True) for i in range(n_layer)]
+            [Transformer_Decoder(d_model=input_size, nhead=n_head, batch_first=True) for i in range(n_layer_decoder)]
         )
         
         self.lm_head = nn.Linear(input_size, 50257,bias=False)
@@ -77,9 +77,12 @@ class Distill_Tuning(GPT2LMHeadModel):
         
         self.position_embedings = self.transformer.wpe
         
-        self.hidden_size = self.embeddings.embedding_dim      
-        self.prompt_encoder = Residual_Model(input_size = self.hidden_size, n_head = 8, n_layer=self.args.residual_layer)
-        self.transformer.requires_grad = False
+        self.hidden_size = self.embeddings.embedding_dim
+        
+        self.prompt_encoder = Residual_Model(input_size = self.hidden_size, n_head = 8, n_layer_encoder= self.args.residual_layer, n_layer_decoder= self.args.residual_layer)
+        
+        for param in self.transformer.parameters():
+                param.requires_grad = False
         
         
     
@@ -96,6 +99,18 @@ class Distill_Tuning(GPT2LMHeadModel):
         # return torch.triu(torch.full((sz, sz), float('-inf'), device=device), diagonal=1)
         return torch.triu(torch.full((sz, sz), True, device=device), diagonal=1)
     
+    
+    
+#     @torch.no_grad()
+#     def get_gpt_embeddings(self, input_ids, position_ids):
+        
+#         output_decoder = super().forward(input_ids=input_ids,
+#                                     position_ids=position_ids,
+#                                     output_hidden_states = True,
+#                                     return_dict= True)
+#         decoder_hidden = output_decoder.hidden_states[-1] #batch*seq*hidden
+        
+#         return decoder_hidden.detach()
     
     @torch.no_grad()
     def get_gpt_embeddings(self, input_ids, position_ids):
@@ -135,9 +150,7 @@ class Distill_Tuning(GPT2LMHeadModel):
 
             if encoder_data.shape[0] != input_ids.shape[0]:
 
-                # print("input_ids:",input_ids.shape)
                 beam_size = int(input_ids.shape[0]/encoder_data.shape[0])
-                # print("beam_size:", beam_size)
                 encoder_data = encoder_data.repeat_interleave(beam_size, dim=0)
 
             model_inputs = {"encoder_hidden_states": encoder_data}
@@ -154,6 +167,31 @@ class Distill_Tuning(GPT2LMHeadModel):
         })
         # print(model_inputs["encoder_hidden_states"])
         return model_inputs
+    
+    
+    
+    
+    def KL_loss(self, input_x, input_y, attention_mask):
+        """
+        compute the KL loss
+        """
+        m = torch.flatten(attention_mask)
+        indices = torch.nonzero(m).squeeze(-1)
+        
+        x = input_x.reshape(-1,input_x.shape[-1])
+        x = torch.index_select(x, 0, indices)
+            
+        y = input_y.reshape(-1,input_y.shape[-1])
+        y = torch.index_select(y, 0, indices)
+        
+        input_data = F.log_softmax(x, dim=1)
+        target = F.softmax(y, dim=1)
+        
+        loss_kl = nn.KLDivLoss(reduction="batchmean")
+        
+        loss = loss_kl(input_data, target)
+        
+        return  loss
     
     
     def forward(
@@ -188,15 +226,7 @@ class Distill_Tuning(GPT2LMHeadModel):
         control_hidden = self.get_gpt_embeddings(control_input_ids, position_ids_control)
         
         
-        
-        if input_ids!= None and self.training:
-            eos_musk = torch.ones(control_input_ids.shape[0], 1).to(self.args.device).bool()
-            attention_mask = (input_ids!= self.tokenizer.pad_token_id).bool()
-            attention_mask = torch.cat([eos_musk,attention_mask], dim=1).bool()
-            
-            eos = torch.zeros(control_input_ids.shape[0], 1).to(self.args.device).fill_(self.tokenizer.pad_token_id).long()
-            input_ids = torch.cat([eos,input_ids], dim=1)
-                        
+        # attention_mask = (input_ids!= self.tokenizer.pad_token_id).bool()
         
         output_decoder = super().forward(input_ids = input_ids,
                                          past_key_values= past_key_values,
@@ -212,7 +242,6 @@ class Distill_Tuning(GPT2LMHeadModel):
                                          output_attentions=use_cache,
                                          output_hidden_states=True,
                                          return_dict=True)
-        
         decoder_hidden = output_decoder.hidden_states #batch*seq*hidden
         
         if self.training:
@@ -225,11 +254,16 @@ class Distill_Tuning(GPT2LMHeadModel):
         if self.training:
             labels = torch.clone(input_ids)
             labels.masked_fill_(attention_mask==False, -100)
+            labels.masked_fill_(token_type_ids==False, -100)
             
             loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
             shift_loigt = logits[:,:-1,:].reshape(-1, logits.shape[-1])
             shift_label = labels[:,1:].reshape(-1)
             loss = loss_fct(shift_loigt, shift_label)
+            
+            # kl_loss = self.KL_loss(logits, output_decoder.logits, attention_mask)
+            # loss += kl_loss
+
         else:
             loss = None
         

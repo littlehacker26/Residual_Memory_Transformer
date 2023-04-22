@@ -41,11 +41,6 @@ from tqdm import tqdm
 nlp = spacy.load('en_core_web_sm')
 
 
-
-
-
-nlp = spacy.load("en_core_web_sm")
-
 def tokenize(dict):
     for key in dict:
         new_sentence_list = []
@@ -157,8 +152,6 @@ def evaluator_coverage(res):
     score = get_coverage_score(gt_concepts, predictions)
     
     return mean(score)
-    
-    
     
     
     

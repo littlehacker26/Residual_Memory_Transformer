@@ -5,7 +5,9 @@ test_path="../../data/commongen.test.jsonl"
 pretrain_path="/home2/zhanghanqing/formatted_wikipedia"
 pretrain_path_val="/home2/zhanghanqing/formatted_wiki_val"
 
-model_name_or_path="/home2/zhanghanqing/pretrained_model/gpt2/large"
+# model_name_or_path="/home2/zhanghanqing/pretrained_model/gpt2/large"
+model_name_or_path="/home2/zhanghanqing/pretrained_model/gpt2/median"
+
 pretrain_plm="gpt"
 tuning_mode='pt'
 train_stage="general_pretrain"
@@ -25,9 +27,9 @@ seed=42
 residual_layer=4
 
 
-for residual_layer in 1 7
+for residual_layer in 4
 do
     echo  $encoder_layer
-    CUDA_VISIBLE_DEVICES=2  python ../train.py  --train --model_name_or_path $model_name_or_path --copy_vocab_path $copy_vocab_path --train_path $train_path  --dev_path $dev_path --test_path $test_path --batch_size $batch_size  --max_epoch $max_epoch --out_dir $out_dir --seed $seed  --pretrain_plm $pretrain_plm --top_p $top_p  --tuning_mode $tuning_mode --training_sample_num $training_sample_num --temperature $temperature --lr $lr  --train_stage $train_stage --pretrain_path $pretrain_path --step_size $step_size --pretrain_path_val $pretrain_path_val --model_type $model_type --step_log $step_log --residual_layer $residual_layer
+    CUDA_VISIBLE_DEVICES=1  python ../train.py  --train --model_name_or_path $model_name_or_path --copy_vocab_path $copy_vocab_path --train_path $train_path  --dev_path $dev_path --test_path $test_path --batch_size $batch_size  --max_epoch $max_epoch --out_dir $out_dir --seed $seed  --pretrain_plm $pretrain_plm --top_p $top_p  --tuning_mode $tuning_mode --training_sample_num $training_sample_num --temperature $temperature --lr $lr  --train_stage $train_stage --pretrain_path $pretrain_path --step_size $step_size --pretrain_path_val $pretrain_path_val --model_type $model_type --step_log $step_log --residual_layer $residual_layer
             
 done

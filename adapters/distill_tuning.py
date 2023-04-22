@@ -28,15 +28,15 @@ BIG_CONST = -1e15
 
 
 class Residual_Model(nn.Module):
-    def __init__(self, input_size, n_head, n_layer):
+    def __init__(self, input_size, n_head, n_layer_encoder, n_layer_decoder):
         super(Residual_Model, self).__init__()
         
         self.encoder_block = nn.ModuleList(
-            [nn.TransformerEncoderLayer(d_model=input_size, nhead=n_head, batch_first=True) for i in range(n_layer)]
+            [nn.TransformerEncoderLayer(d_model=input_size, nhead=n_head, batch_first=True) for i in range(n_layer_encoder)]
         )
             
         self.decoder_block = nn.ModuleList(
-            [Transformer_Decoder(d_model=input_size, nhead=n_head, batch_first=True) for i in range(n_layer)]
+            [Transformer_Decoder(d_model=input_size, nhead=n_head, batch_first=True) for i in range(n_layer_decoder)]
         )
         
         self.lm_head = nn.Linear(input_size, 50257,bias=False)
@@ -83,27 +83,35 @@ class Distill_Tuning(torch.nn.Module):
         
         # load prompt encoder
         self.hidden_size = self.embeddings.embedding_dim
-            
         
         self.loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
         self.kl_loss = nn.KLDivLoss(reduction="batchmean")
 
         print("layer of resiudal:", self.args.residual_layer)
         
-        self.prompt_encoder = Residual_Model(input_size = self.hidden_size, n_head = 8, n_layer=self.args.residual_layer)
+        self.prompt_encoder = Residual_Model(input_size = self.hidden_size, n_head = 8, n_layer_encoder= self.args.residual_layer, n_layer_decoder= self.args.residual_layer)
         
 
+#     @torch.no_grad()
+#     def get_gpt_embeddings(self, input_ids, position_ids):
+        
+#         output_decoder = self.model(input_ids=input_ids,
+#                                     position_ids=position_ids,
+#                                     output_hidden_states = True,
+#                                     return_dict= True)
+#         decoder_hidden = output_decoder.hidden_states[-1] #batch*seq*hidden
+        
+#         return decoder_hidden.detach()
+    
+    
     @torch.no_grad()
     def get_gpt_embeddings(self, input_ids, position_ids):
         
-                        
         position_embeds = self.position_embedings(position_ids)
         inputs_embeds = self.embeddings(input_ids)
         hidden_states = inputs_embeds + position_embeds 
-        
         return hidden_states.detach()
                 
-        
     
     def load_prompt(self, embedding_checkpoint):
         checkpoint = torch.load(embedding_checkpoint)
@@ -154,7 +162,6 @@ class Distill_Tuning(torch.nn.Module):
         control_input_ids = x_hs
         attention_mask_control = (control_input_ids!= self.tokenizer.pad_token_id).to(x_hs.device).bool()
         position_ids_control = attention_mask_control.long().cumsum(-1)-1
-        # position_ids_control.masked_fill_(attention_mask_control == 0, 0)
 
         control_hidden = self.get_gpt_embeddings(control_input_ids, position_ids_control)
         

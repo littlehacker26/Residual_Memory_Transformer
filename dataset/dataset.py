@@ -94,8 +94,9 @@ class CommonGenDataset(Dataset):
                 if self.is_training:
                     for c in item['scene']:
                         c = c.strip()
-                        if c.endswith('.'):
-                            c= c[:-1].strip()                   
+                        c =  c+"<|endoftext|>"
+                        # if c.endswith('.'):
+                        #     c= c[:-1].strip()                   
   
                         c_output_ids = self.tokenizer(c, return_tensors="np")['input_ids'][0].tolist()
 
@@ -156,12 +157,19 @@ def data_wrapper(dataset, tokenizer, plm_type):
     new_dataset['encode_input'] = torch.from_numpy(encode_input)
     
     
-                           
     max_output_len = max([len(d['output_ids']) for d in dataset])
     output_ids = np.full((batch_size, max_output_len), _PAD, dtype=np.int64)
     for i, d in enumerate(dataset):
         output_ids[i, :len(d['output_ids'])] = d['output_ids']
     new_dataset['output_ids'] = torch.from_numpy(output_ids)
+    
+    
+    
+    max_output_len = max([len(d['output_ids']) for d in dataset])
+    mask_ids = np.full((batch_size, max_output_len), 0, dtype=np.int64)
+    for i, d in enumerate(dataset):
+        mask_ids[i, :len(d['output_ids'])] = 1
+    new_dataset['attention_mask'] = torch.from_numpy(mask_ids)
     
     
     max_output_len = max([len(d['cat_text']) for d in dataset])

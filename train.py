@@ -1,5 +1,5 @@
 from dataset.vocabulary import T5CopyVocabulary
-from dataset.dataset import CommonGenDataset, C2Gen, get_data_loader
+from dataset.dataset_keyword import CommonGenDataset, C2Gen, get_data_loader
 from dataset.wiki_dataset import WikiDataset, WikiDataset_General, get_wiki_data_loader
 from dataset.e2e_dataset import Seq2SeqDataset, seq_get_data_loader
 
@@ -135,10 +135,10 @@ def construct_generation_args():
     parser.add_argument("--step_size", type=int, default=10000)
     parser.add_argument("--step_log", type=int, default=10000)
     parser.add_argument("--num_layer", type=int, default=2) 
-    parser.add_argument("--residual_layer", type=int, default=4) 
+    parser.add_argument("--residual_layer", type=int, default=4)
+    # parser.add_argument("--decoder_layer", type=int, default=4)
 
-
-
+    
     # parser.add_argument("--pattern", type=str, default="vanilla", choices=["dynamic_prompt_max","dynamic_prompt_mean","dynamic_prompt_hybird","vanilla"])
     parser.add_argument("--tuning_mode", type=str, default="pt", choices=["fp","pt"])
     parser.add_argument("--pretrain_plm", type=str, default="gpt", choices=["gpt","t5"])
@@ -235,33 +235,21 @@ def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path
     with torch.no_grad():
         for batch in tqdm(eval_data_iter):
                  
-            x_token = batch["input_ids"].to(args.device).long()
-            context =  batch["output_ids"].to(args.device).long()
+            context =  batch["input_ids"].to(args.device).long()
             encode_inputs =  batch["encode_input"].to(args.device).long() 
-
 
             gts += batch["item"]
             concept_set += batch["concept_set"]
             
             if only_test == True:
                 input_ids = None
-                
             else:
                 input_ids = context
-    
-                
-            if input_ids == None:
-                input_ids = torch.zeros(encode_inputs.shape[0], 1).to(args.device).fill_(tokenizer.pad_token_id).long()            
-                attention_mask = torch.ones(encode_inputs.shape[0], 1).to(args.device).bool() 
-                
-            else:
-                eos_musk = torch.ones(encode_inputs.shape[0], 1).to(args.device).bool()
                 attention_mask = (input_ids!= tokenizer.pad_token_id).bool()
-                attention_mask = torch.cat([eos_musk,attention_mask], dim=1).bool()
 
-                eos = torch.zeros(encode_inputs.shape[0], 1).to(args.device).fill_(tokenizer.pad_token_id).long()
-                input_ids = torch.cat([eos,input_ids], dim=1)
-                
+            if input_ids == None:
+                input_ids = torch.zeros(encode_inputs.shape[0], 1).to(args.device).fill_(464).long()            
+                attention_mask = torch.ones(encode_inputs.shape[0], 1).to(args.device).bool()
 
             output_sequences = model.generate(
                 input_ids=input_ids,
@@ -269,16 +257,17 @@ def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path
                 attention_mask = attention_mask,
                 max_length =20 + input_ids.shape[1],
                 num_beams =4,
-                top_p = 0.5,
+                top_p = 0.6,
                 repetition_penalty=1.25,
                 top_k = 0,
-                no_repeat_ngram_size = 3,            
+                no_repeat_ngram_size = 3,
                 do_sample= True, # disable sampling to test if batching affects output
             )
-            
             text = []
             for i in range(len(output_sequences)):
                 text.append(tokenizer.decode(output_sequences[i],skip_special_tokens= True))
+            
+            # text = [t.strip().replace("\n", '') for t in text]
             
             text = [t.strip() for t in text]
             
@@ -291,7 +280,6 @@ def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path
     for g, c, r in zip(gts, concept_set, res):
         references[c] = g
         hypothesis[c] = [r]
-        # hypothesis[c] = [g[0]]
 
     res = hypothesis
     gts = references
@@ -302,16 +290,6 @@ def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path
     
     if  only_test == False:
         return {"l_coverage":cov}
-    # print("Coverage score is:", a)
-    
-    # score = evaluator_cider(gts, res)
-    # print("Cider: %0.3f" %score)
-    
-    # score = evaluator_meteor(gts, res)
-    # print("Meteor: %0.3f" %score)
-    
-    score_bleu = evaluator_bleu(gts, res)
-    # print("Bleu:", score_bleu)
     
     score_self_bleu = evaluator_selfbleu(res)
     # print("self bleu:", score_self_bleu)
@@ -319,10 +297,8 @@ def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path
     score_ppl = evaluator_ppl(res, "/home2/zhanghanqing/pretrained_model/gpt2/large")
     # print("PPL: %0.3f" score_ppl)
     
-    return {"coverage":cov, "bleu":score_bleu,"self_bleu":score_self_bleu, "ppl": score_ppl}
+    return {"coverage":cov,"self_bleu":score_self_bleu, "ppl": score_ppl}
         
-
-
 
 def seq_run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path=None):
     model.eval()
@@ -362,73 +338,6 @@ def seq_run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_
     
     return {"bleu":score_bleu,"self_bleu":score_self_bleu, "ppl": score_ppl}
 
-
-
-def task_seq2seq(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loade, optimizer, my_lr_scheduler):
-    
-    result_name_path = f"../result/{args.model_type}_{args.dataset}_{args.tuning_mode}_training_samples_{args.training_sample_num}_{args.temperature}.csv"
-        
-    best_score = 0.0
-    early_stop=0
-    bleu_2 = 0.0
-    
-    if args.train:
-        
-        print("len(max_epoch):", args.max_epoch)
-        
-        for epoch in range(args.max_epoch):
-            print('EPOCH %d / %d' % (epoch + 1, args.max_epoch))
-            tot_loss = 0
-            model.train()
-            
-            step = 0
-            step_count=0
-            for batch_idx, batch in tqdm(enumerate(train_data_loader)):
-                    model.train()
-                    x_token = batch["input_ids"].to(args.device).long()
-                    input_ids =  batch["output_ids"].to(args.device).long()
-                    
-                    _,output =  model(x_token, input_ids)
-                    loss = output
-                    print("the loss is:", loss)
-                    tot_loss += loss.item()
-
-                    loss.backward()
-                    torch.cuda.empty_cache()
-                    optimizer.step()
-                    torch.cuda.empty_cache()
-                    optimizer.zero_grad()
-            
-                    step += args.batch_size
-                    step_count += args.batch_size
-                    
-            my_lr_scheduler.step()
-
-            if epoch+1>=3:
-                outpus = seq_run_eval(args, model, dev_data_loader, tokenizer, only_test=True, output_path=args.output_path)
-                bleu_2 = dict(outpus["bleu"])["bigram"]
-                ppl = outpus["ppl"]
-                print("bleu_2:", bleu_2)
-                print("ppl:", ppl)
-            else:
-                coverage = 0.0
-                continue
-
-            if bleu_2>best_score:
-                early_stop=0
-                print("bleu_2:", bleu_2)
-                best_score = bleu_2
-                outpus_test = seq_run_eval(args, model, test_data_loader, tokenizer, only_test=True, output_path=args.output_path)
-                print(outpus_test)
-            else:
-                early_stop+=1
-                if early_stop>3:
-                    break
-                        
-    
-    in_csv = {"seed":args.seed,"train_stage": args.train_stage,"dev_cov":best_score}
-    in_csv.update(outpus_test)
-    addCsv(result_name_path, in_csv)
     
 
     
@@ -454,12 +363,12 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
             for batch_idx, batch in tqdm(enumerate(train_data_loader)):
                     model.train()
                                     
-                    input_ids =  batch["output_ids"].to(args.device).long()
-                    mask_ids =  batch["mask_ids"].to(args.device).long()
+                    input_ids =  batch["input_ids"].to(args.device).long()
+                    mask_ids =  batch["mask_ids"].to(args.device).bool()
                     encode_inputs =  batch["encode_input"].to(args.device).long()
-                    # encode_inputs =  batch["input_ids"].to(args.device).long()
+                    attention_mask =batch["attention_mask"].to(args.device).bool()
                     
-                    output =  model(encoder_hidden_states=encode_inputs, input_ids = input_ids, token_type_ids = mask_ids)
+                    output =  model(encoder_hidden_states=encode_inputs, input_ids = input_ids, token_type_ids = mask_ids, attention_mask=attention_mask)
                     
                     loss = output.loss
                     print("the loss is:", loss)
@@ -477,10 +386,11 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
             my_lr_scheduler.step()
 
             if epoch+1>=1:
-                # outpus = run_eval(args, model, dev_data_loader, tokenizer, only_test=True, output_path=args.output_path)
+                # output = run_eval(args, model, dev_data_loader, tokenizer, only_test=True, output_path=args.output_path)
+                
                 output = run_eval(args, model, test_long_loader, tokenizer, only_test=False, output_path=args.output_path)
-
                 coverage = output["l_coverage"]
+                # coverage = output["coverage"]
                 print("coverage:", coverage)
 
             else:
@@ -491,12 +401,9 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
                 early_stop=0
                 print("coverage:", coverage)
                 best_score = coverage
-                outpus_test = run_eval(args, model, test_data_loader, tokenizer, only_test=True, output_path=args.output_path)
-                # outpus_long = run_eval(args, model, test_long_loader, tokenizer, only_test=False, output_path=args.output_path)
-                outpus_long = _copy.deepcopy(output)
+                outpus_long = run_eval(args, model, test_long_loader, tokenizer, only_test=False, output_path=args.output_path)
+                outpus_test = _copy.deepcopy(output)
                 print(outpus_long)
-                print(outpus_test)
-                # print(outpus_long)
             else:
                 early_stop+=1
                 if early_stop>3:
@@ -512,9 +419,9 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
 def general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler):
     
     
-    result_name_path = f"../pretrain_result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_residual_layer_{args.residual_layer}_{args.temperature}.csv"
+    result_name_path = f"../pretrain_result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_layer_{args.residual_layer}.csv"
     
-    result_ppl_path = f"../pretrain_result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_residual_layer{args.residual_layer}_ppl.csv"
+    result_ppl_path = f"../pretrain_result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_layer_{args.residual_layer}_ppl.csv"
         
     best_score = 0.0   
     early_stop=0
@@ -555,7 +462,7 @@ def general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader,
                     step_log += args.batch_size
                 
                     print(f"epoch is {epoch}, and step size is:{step}")
-
+                    
                     
                     if step_log>args.step_log:
                         step_log = 0
@@ -576,12 +483,8 @@ def general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader,
                         tot_loss = 0
                         step_count=0
                         
-                    if step> 8001000:
-                        exit()
-                        
-                        
-                        
-
+                    if step> 4001000:
+                        exit()                        
 
 
 
@@ -632,9 +535,7 @@ if __name__ == "__main__":
     model.to(args.device)
     
 
-            
     print("args.batch_size:",args.batch_size)
-    
     
     if args.validation or args.test:
         run_eval(args, model, dev_data_loader, tokenizer, only_test=True, output_path=args.output_path)
