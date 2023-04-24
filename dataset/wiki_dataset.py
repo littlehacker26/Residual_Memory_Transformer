@@ -54,7 +54,6 @@ class WikiDataset_General(Dataset):
             
         self.record = [item for subl in data for item in subl]
 
-                        
         if self.is_training: random.shuffle(self.record)
         
     

@@ -38,6 +38,43 @@ from transformers import AdamW, get_linear_schedule_with_warmup, get_constant_sc
 import pandas as pd
 import csv
 
+
+
+def run_eval_ppl(args, model, eval_data_iter, tokenizer, only_test=False, output_path=None):
+    
+    model.eval()
+
+    ppls = []
+    
+    with torch.no_grad():
+        for batch in tqdm(eval_data_iter):
+
+            x_token = batch["concept_set_input_ids"].to(args.device).long()
+            input_ids =  batch["c_output_ids"].to(args.device).long()
+            x_mask =  batch["output_attention_mask"].to(args.device).long()
+            
+            logits,_  =  model(x_token, input_ids)
+            ppl      =   ppl_from_pretrained_model(logits, input_ids, x_mask)
+            ppls+=ppl
+            
+    return np.nanmean(ppls)
+
+
+
+def post_proces(text, flag_tokens):
+    
+    res =[]
+    for t, f in zip(text, flag_tokens):
+        data = t.replace('\n', '').replace('\xa0', '')
+        
+        for ii in f.keys():
+            if ii in data:
+                data = data.replace(ii, f[ii])
+        res.append(data)
+     
+    return res
+
+
 def save_csv_to_text(filename, csv_name, usecols):
     '''
     read csv data，convert the data in the specific column to txt file
@@ -79,7 +116,7 @@ def save_model(args, model, epoch, metric):
     
     print("residual_layer:",args.residual_layer)
     
-    ckpt_name = "layer_{}_epoch_{}_metric_{}.ckpt".format(args.residual_layer, epoch ,metric)
+    ckpt_name = "layer_{}_epoch_{}_metric_{}.ckpt".format(args.residual_layer, epoch, metric)
     
     best_ckpt = {'embedding': model.prompt_encoder.state_dict(),
                 'ckpt_name': ckpt_name,

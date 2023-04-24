@@ -1,8 +1,8 @@
-from dataset.vocabulary import T5CopyVocabulary
-from dataset.dataset_keyword import CommonGenDataset, C2Gen, get_data_loader
-from dataset.wiki_dataset import WikiDataset, WikiDataset_General, get_wiki_data_loader
-from dataset.e2e_dataset import Seq2SeqDataset, seq_get_data_loader
+from dataset.dataset import CommonGenDataset, C2Gen, get_data_loader,kw_CommonGenDataset
+# from dataset.dataset_keyword import CommonGenDataset as kw_CommonGenDataset
 
+from dataset.wiki_dataset import WikiDataset, WikiDataset_General, get_wiki_data_loader
+# from dataset.e2e_dataset import Seq2SeqDataset, seq_get_data_loader
 
 
 import argparse
@@ -17,11 +17,11 @@ import os, sys
 from speaksee import evaluation
 import spacy
 import random
-from dataset.diversity import distinct_n
 import json
 import string
 import numpy as np
 from os.path import join
+import datetime 
 
 
 
@@ -144,7 +144,7 @@ def construct_generation_args():
     parser.add_argument("--pretrain_plm", type=str, default="gpt", choices=["gpt","t5"])
     parser.add_argument("--train_stage", type=str, default="fine_tuning", choices=["fine_tuning","general_pretrain","control_pretrain"])
     parser.add_argument("--model_type", type=str, default="Vanilla_Prompt_Tuning", choices=["Residual_Tuning","Prompt_Residual_Tuning","Vanilla_Prompt_Tuning"])
-    parser.add_argument("--dataset", type=str, default="CommonGen", choices=["CommonGen","cmv","roc"])
+    parser.add_argument("--dataset", type=str, default="CommonGen", choices=["CommonGen","keyword","roc"])
 
 
 
@@ -175,6 +175,9 @@ def construct_generation_args():
     parser.add_argument('--validation', action='store_true')
     parser.add_argument('--test', action='store_true')
     
+    parser.add_argument('--saving_model', action='store_true')
+
+    
     args = parser.parse_args()
     # post-parsing args
     args.device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -190,42 +193,8 @@ def construct_generation_args():
 
 
 
-def post_proces(text, flag_tokens):
-    
-    res =[]
-    for t, f in zip(text, flag_tokens):
-        data = t.replace('\n', '').replace('\xa0', '')
-        
-        for ii in f.keys():
-            if ii in data:
-                data = data.replace(ii, f[ii])
-        
-        res.append(data)
-    
-    return res
 
-
-def run_eval_ppl(args, model, eval_data_iter, tokenizer, only_test=False, output_path=None):
-    
-    model.eval()
-
-    ppls = []
-    
-    with torch.no_grad():
-        for batch in tqdm(eval_data_iter):
-
-            x_token = batch["concept_set_input_ids"].to(args.device).long()
-            input_ids =  batch["c_output_ids"].to(args.device).long()
-            x_mask =  batch["output_attention_mask"].to(args.device).long()
-            
-            logits,_  =  model(x_token, input_ids)
-            ppl      =   ppl_from_pretrained_model(logits, input_ids, x_mask)
-            ppls+=ppl
-            
-    return np.nanmean(ppls)
-            
-
-def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path=None):
+def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
     model.eval()
 
     gts = []
@@ -234,22 +203,15 @@ def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path
     
     with torch.no_grad():
         for batch in tqdm(eval_data_iter):
-                 
-            context =  batch["input_ids"].to(args.device).long()
+            
+            input_ids =  batch["input_ids"].to(args.device).long()
+            
             encode_inputs =  batch["encode_input"].to(args.device).long() 
+            attention_mask = batch["attention_mask"].to(args.device).bool()
+            
 
             gts += batch["item"]
             concept_set += batch["concept_set"]
-            
-            if only_test == True:
-                input_ids = None
-            else:
-                input_ids = context
-                attention_mask = (input_ids!= tokenizer.pad_token_id).bool()
-
-            if input_ids == None:
-                input_ids = torch.zeros(encode_inputs.shape[0], 1).to(args.device).fill_(464).long()            
-                attention_mask = torch.ones(encode_inputs.shape[0], 1).to(args.device).bool()
 
             output_sequences = model.generate(
                 input_ids=input_ids,
@@ -268,7 +230,6 @@ def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path
                 text.append(tokenizer.decode(output_sequences[i],skip_special_tokens= True))
             
             # text = [t.strip().replace("\n", '') for t in text]
-            
             text = [t.strip() for t in text]
             
             print(text)
@@ -287,67 +248,27 @@ def run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path
     print("res:", res)
     
     cov = evaluator_coverage(res)
-    
-    if  only_test == False:
-        return {"l_coverage":cov}
-    
+        
     score_self_bleu = evaluator_selfbleu(res)
-    # print("self bleu:", score_self_bleu)
     
     score_ppl = evaluator_ppl(res, "/home2/zhanghanqing/pretrained_model/gpt2/large")
-    # print("PPL: %0.3f" score_ppl)
     
     return {"coverage":cov,"self_bleu":score_self_bleu, "ppl": score_ppl}
-        
 
-def seq_run_eval(args, model, eval_data_iter, tokenizer, only_test=True, output_path=None):
-    model.eval()
 
-    gts = []
-    res = []
-    
-    with torch.no_grad():
-        for batch in tqdm(eval_data_iter):
-                 
-            input_ids = batch["input_ids"].to(args.device).long()
-            output_ids =  batch["output_ids"].to(args.device).long()
-            
-            gts += tokenizer.batch_decode(output_ids,skip_special_tokens= True)
-            
-            result = model.generate(prompts_ids = input_ids, max_length=args.max_length, context= None)
-            text = tokenizer.batch_decode(result["generated_tokens"], skip_special_tokens= True)
-            text = [t.strip() for t in text]            
-            print(text)
-            res += text
-            
-    references={}
-    hypothesis  = {}
-    
-    for i, (g, r) in enumerate(zip(gts, res)):
-        references[i] = [g]
-        hypothesis[i] = [r]
 
-    res =  hypothesis
-    gts = references
-    
-    score_bleu = evaluator_bleu(gts, res)
-    
-    score_self_bleu = evaluator_selfbleu(res)
-    
-    score_ppl = evaluator_ppl(res, "/home2/zhanghanqing/pretrained_model/gpt2/large")
-    
-    return {"bleu":score_bleu,"self_bleu":score_self_bleu, "ppl": score_ppl}
 
-    
 
-    
-def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, test_long_loader, optimizer, my_lr_scheduler):
+def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler):
     
     result_name_path = f"../result/{args.model_type}_seed_{args.seed}_{args.tuning_mode}_training_samples_{args.training_sample_num}_memory_p_{args.memory_p}.csv"
         
     best_score = 0.0   
     early_stop=0
     coverage = 0.0
+    time_record = str(datetime.datetime.now()).replace(" ","_")
+
+    
     
     if args.train:
         
@@ -356,7 +277,6 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
             print('EPOCH %d / %d' % (epoch + 1, args.max_epoch))
             tot_loss = 0
             model.train()
-            
             step = 0 
             step_count=0
             
@@ -386,24 +306,21 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
             my_lr_scheduler.step()
 
             if epoch+1>=1:
-                # output = run_eval(args, model, dev_data_loader, tokenizer, only_test=True, output_path=args.output_path)
-                
-                output = run_eval(args, model, test_long_loader, tokenizer, only_test=False, output_path=args.output_path)
-                coverage = output["l_coverage"]
-                # coverage = output["coverage"]
+                output = run_eval(args, model, dev_data_loader, tokenizer, output_path=args.output_path)
+                coverage = output["coverage"]
                 print("coverage:", coverage)
-
+                print(output)
             else:
                 coverage = 0.0
                 continue
 
             if coverage>best_score:
                 early_stop=0
-                print("coverage:", coverage)
                 best_score = coverage
-                outpus_long = run_eval(args, model, test_long_loader, tokenizer, only_test=False, output_path=args.output_path)
-                outpus_test = _copy.deepcopy(output)
+                outpus_long = run_eval(args, model, test_data_loader, tokenizer, output_path=args.output_path)
                 print(outpus_long)
+                if args.saving_model:
+                    save_model(args, model, 0, time_record)
             else:
                 early_stop+=1
                 if early_stop>3:
@@ -411,7 +328,7 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
                         
     
     in_csv = {"seed":args.seed,"train_stage": args.train_stage,"dev_cov":best_score}
-    in_csv.update(outpus_test)
+    # in_csv.update(outpus_test)
     in_csv.update(outpus_long)
     addCsv(result_name_path, in_csv)
     
@@ -554,7 +471,6 @@ if __name__ == "__main__":
         
     if args.train_stage == "fine_tuning":
         
-        
         if args.dataset == "CommonGen":
         
             train_data = CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
@@ -567,24 +483,25 @@ if __name__ == "__main__":
             test_data = CommonGenDataset(args.test_path, tokenizer, is_training=False, args=args)
             test_data_loader = get_data_loader(test_data, 50)
 
-            long_dis_data = C2Gen(args.long_test_path, tokenizer, args=args)
-            test_long_loader = get_data_loader(long_dis_data, 1)
-
-            task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, test_long_loader, optimizer, my_lr_scheduler)
+            task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler)
             
         else:
             
-            train_data = Seq2SeqDataset(args.train_path, tokenizer, type_path="train", args=args)
+            train_data = kw_CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
             print("train_data:", len(train_data))
-            train_data_loader = seq_get_data_loader(train_data, args.batch_size)
+            train_data_loader = get_data_loader(train_data, args.batch_size)
 
-            dev_data = Seq2SeqDataset(args.dev_path, tokenizer, type_path="valid", args=args)
-            dev_data_loader = seq_get_data_loader(dev_data, 50)
+            # long_dis_data = C2Gen(args.long_test_path, tokenizer, args=args)
+            # test_long_loader = get_data_loader(long_dis_data, 1)
+            # task_train(args, model, tokenizer, train_data_loader, test_long_loader, test_long_loader, optimizer, my_lr_scheduler)
+            
+            dev_data = CommonGenDataset(args.dev_path, tokenizer, is_training=False, args=args)
+            dev_data_loader = get_data_loader(dev_data, 50)
 
-            test_data = Seq2SeqDataset(args.test_path, tokenizer, type_path="test",  args=args)
-            test_data_loader = seq_get_data_loader(test_data, 50)
+            test_data = CommonGenDataset(args.test_path, tokenizer, is_training=False, args=args)
+            test_data_loader = get_data_loader(test_data, 50)
 
-            task_seq2seq(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler)
+            task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler)
             
     
     elif  args.train_stage == "general_pretrain":

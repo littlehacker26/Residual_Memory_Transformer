@@ -30,24 +30,19 @@ class C2Gen(Dataset):
             keyword = ', '.join(r["row"]["keywords"])
             context =  r["row"]["context"]
             concept = '#'.join(r["row"]["keywords"])
+
             
-            # keyword = self.tokenizer(keyword, return_tensors="np")['input_ids'][0].tolist()
-            # context = self.tokenizer(context, return_tensors="np")['input_ids'][0].tolist()
-            
-            keyword_encode = self.tokenizer(f"The text should include:{keyword}. <bos>", return_tensors="np")['input_ids'][0].tolist()
             context = self.tokenizer(context, return_tensors="np")['input_ids'][0].tolist()
-            # context = self.tokenizer("<|endoftext|> " + context, return_tensors="np")['input_ids'][0][1:].tolist()
+            concept_set_input_ids = self.tokenizer(f"Include:{keyword}; Context:{len(context)}; Target:20", return_tensors="np")['input_ids'][0].tolist()
             
             self.record.append({
-                        "encode_input":self.tokenizer(keyword, return_tensors="np")['input_ids'][0].tolist(),
-                        "input_ids":keyword_encode,
-                        "output_ids":context,
+                        "item": [0],
                         "concept_set":concept,
-                        "item": 0,
-                        "cat_text":[0]})
-                        
+                        "encode_input":concept_set_input_ids,
+                        "input_ids":context,
+                        "context":context})
         random.shuffle(self.record)
-          
+        
 
     def __len__(self):
         return len(self.record)
@@ -72,7 +67,6 @@ class CommonGenDataset(Dataset):
         self.read_content(json_path)
         
         
-        
     def read_content(self, json_path):
         print("reading data from %s ..." % json_path)
         self.record = []
@@ -87,34 +81,31 @@ class CommonGenDataset(Dataset):
             for l in tqdm(lines):
                 item = json.loads(l.strip())
                 concept_set = ', '.join(item['concept_set'].split('#'))
-
-                concept_set_input_ids = self.tokenizer(f"The text should include:{concept_set}. <bos>", return_tensors="np")['input_ids'][0].tolist()
+                
 
                 gt = copy.deepcopy(item['scene'])
                 if self.is_training:
                     for c in item['scene']:
                         c = c.strip()
-                        c =  c+"<|endoftext|>"
                         # if c.endswith('.'):
                         #     c= c[:-1].strip()                   
-  
                         c_output_ids = self.tokenizer(c, return_tensors="np")['input_ids'][0].tolist()
+    
+                        _concept_set_input_ids = self.tokenizer(f"Include:{concept_set}; Context:0; Target:{len(c_output_ids)}", return_tensors="np")['input_ids'][0].tolist()               
 
                         self.record.append({
                             "concept_set":item['concept_set'],
-                            "encode_input":self.tokenizer(concept_set, return_tensors="np")['input_ids'][0].tolist(),
-                            "input_ids":concept_set_input_ids,
-                            "output_ids":c_output_ids,
-                            "cat_text": concept_set_input_ids+c_output_ids,
+                            "encode_input":_concept_set_input_ids,
+                            "input_ids":c_output_ids,
+                            "context":None,
                             "item":0})
                 else:
                     self.record.append({
                             "concept_set":item['concept_set'],
-                            "encode_input":self.tokenizer(concept_set, return_tensors="np")['input_ids'][0].tolist(),
-                            "input_ids":concept_set_input_ids,
-                            "output_ids":np.array([0,0]),
-                            "cat_text": concept_set_input_ids,
-                            "item": item['scene']})
+                            "encode_input":self.tokenizer(f"Include:{concept_set}; Context:1; Target:20", return_tensors="np")['input_ids'][0].tolist(),
+                            "input_ids":[464],
+                            "context":[464],
+                            "item": 0})
                         
         if self.is_training: random.shuffle(self.record)
 
@@ -125,28 +116,104 @@ class CommonGenDataset(Dataset):
         item = self.record[index]
 
         return item
+    
+    
+    
+class kw_CommonGenDataset(Dataset):
 
+    def __init__(self, json_path, tokenizer, is_training=False, args=None):
+        super(kw_CommonGenDataset, self).__init__()
 
-def data_wrapper(dataset, tokenizer, plm_type):
+        self.tokenizer = tokenizer
+        self.is_training = is_training
+        np.set_printoptions(threshold=sys.maxsize)
+        self.args = args
+
+        
+        self.tokenizer.padding_side = "right"
+        self.read_content(json_path)
+        
+        
+        
+    def read_content(self, json_path):
+        print("reading data from %s ..." % json_path)
+        self.record = []
+        with open(json_path) as out:
+
+            lines = json.load(out)
+            
+            for item in tqdm(lines):
+                
+                c = item["content"]
+                c = c.strip()
+                c_output_ids = self.tokenizer(c, return_tensors="np")['input_ids'][0].tolist()
+                
+                                
+                concept_set = ', '.join(item['keywords'].split('#'))
+                t = item["target"]
+                t = t.strip()
+                t =  t       
+                
+                if len(c_output_ids)==0:
+                    c_output_ids_ = self.tokenizer(t, return_tensors="np")['input_ids'][0].tolist()                    
+                else:
+                    c_output_ids_ = self.tokenizer(" "+t, return_tensors="np")['input_ids'][0].tolist()
+                
+                if (len(c_output_ids_)+len(c_output_ids))>200:
+                    continue
+                
+                if self.is_training:
+                    concept_set_input_ids = self.tokenizer(f"Include:{concept_set}; Context:{len(c_output_ids)}; Target:{len(c_output_ids_)}", return_tensors="np")['input_ids'][0].tolist()               
+                    self.record.append({
+                        "item": [0],
+                        "concept_set":item['keywords'],
+                        "encode_input":concept_set_input_ids,
+                        "context":c_output_ids,
+                        "input_ids":c_output_ids+c_output_ids_})
+                    
+                else:
+                    concept_set_input_ids = self.tokenizer(f"Include:{concept_set}; Context:{len(c_output_ids)}; Target:16", return_tensors="np")['input_ids'][0].tolist()
+                    self.record.append({
+                            "item": [0],
+                            "concept_set":item['keywords'],
+                            "encode_input":concept_set_input_ids,
+                            "context":c_output_ids,
+                            "input_ids":c_output_ids})
+                        
+        if self.is_training: random.shuffle(self.record)
+
+    def __len__(self):
+        return len(self.record)
+
+    def __getitem__(self, index):
+        item = self.record[index]
+
+        return item
+    
+
+def data_wrapper(dataset, tokenizer):
     batch_size = len(dataset)
     new_dataset = {'concept_set': [d['concept_set'] for d in dataset], 
                    'encode_input': [d['encode_input'] for d in dataset], 
                    'input_ids': [d['input_ids'] for d in dataset],
-                   'output_ids': [d['output_ids'] for d in dataset],                   
-                   'cat_text':[d['cat_text'] for d in dataset],
-                  'item':[d['item'] for d in dataset]}
+                   'context': [d['context'] for d in dataset],
+                   'item': [d['item'] for d in dataset]}
 
     _PAD = tokenizer.eos_token_id
-    _EOS = tokenizer.eos_token_id
-    
     
     max_concept_len = max([len(d['input_ids']) for d in dataset])
     concept_set_input = np.full((batch_size, max_concept_len), _PAD, dtype=np.int64)
     for i, d in enumerate(dataset):
         data = d['input_ids'][:max_concept_len]
-        concept_set_input[i, -len(data):] = data
+        concept_set_input[i, :len(data)] = data
     new_dataset['input_ids'] = torch.from_numpy(concept_set_input)
     
+    
+    max_output_len = max([len(d['input_ids']) for d in dataset])
+    mask_ids = np.full((batch_size, max_output_len), 0, dtype=np.int64)
+    for i, d in enumerate(dataset):
+        mask_ids[i, :len(d['input_ids'])] = 1
+    new_dataset['attention_mask'] = torch.from_numpy(mask_ids)
     
     
     max_concept_len = max([len(d['encode_input']) for d in dataset])
@@ -157,32 +224,11 @@ def data_wrapper(dataset, tokenizer, plm_type):
     new_dataset['encode_input'] = torch.from_numpy(encode_input)
     
     
-    max_output_len = max([len(d['output_ids']) for d in dataset])
-    output_ids = np.full((batch_size, max_output_len), _PAD, dtype=np.int64)
-    for i, d in enumerate(dataset):
-        output_ids[i, :len(d['output_ids'])] = d['output_ids']
-    new_dataset['output_ids'] = torch.from_numpy(output_ids)
-    
-    
-    
-    max_output_len = max([len(d['output_ids']) for d in dataset])
-    mask_ids = np.full((batch_size, max_output_len), 0, dtype=np.int64)
-    for i, d in enumerate(dataset):
-        mask_ids[i, :len(d['output_ids'])] = 1
-    new_dataset['attention_mask'] = torch.from_numpy(mask_ids)
-    
-    
-    max_output_len = max([len(d['cat_text']) for d in dataset])
-    input_ids = np.full((batch_size, max_output_len), _PAD, dtype=np.int64)
-    for i, d in enumerate(dataset):
-        input_ids[i, :len(d['cat_text'])] = d['cat_text']
-    new_dataset['cat_text'] = torch.from_numpy(input_ids)
-    
-    
-    max_output_len = max([len(d['cat_text']) for d in dataset])
+    max_output_len = max([len(d['input_ids']) for d in dataset])
     mask_ids = np.full((batch_size, max_output_len), 1, dtype=np.int64)
     for i, d in enumerate(dataset):
-        mask_ids[i, :len(d['input_ids'])] = 0
+        if d['context']!=None:
+            mask_ids[i, :len(d['context'])] = 0
     new_dataset['mask_ids'] = torch.from_numpy(mask_ids)
                                   
     return new_dataset
@@ -190,9 +236,9 @@ def data_wrapper(dataset, tokenizer, plm_type):
 
 
 def get_data_loader(dataset, batch_size):
-    collate_fn = lambda d: data_wrapper(d, dataset.tokenizer, dataset.args.pretrain_plm)
+    collate_fn = lambda d: data_wrapper(d, dataset.tokenizer)
     return DataLoader(dataset, 
         batch_size=batch_size,
-        num_workers=2,
+        num_workers=4,
         collate_fn=collate_fn
     )

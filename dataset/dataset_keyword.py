@@ -10,45 +10,7 @@ import string
 import sys
 import random
 
-class C2Gen(Dataset):
-    def __init__(self, json_path, tokenizer, args=None):
-        super(C2Gen, self).__init__()
 
-        self.tokenizer = tokenizer
-        np.set_printoptions(threshold=sys.maxsize)
-        self.args = args
-        
-        self.record = []
-        self.read_content(json_path)
-        
-    def read_content(self, json_path):
-        print("reading data from %s ..." % json_path)
-        
-        data = json.load(open(json_path,"r"))
-        for r in data["rows"]:            
-            keyword = ', '.join(r["row"]["keywords"])
-            context =  r["row"]["context"]
-            concept = '#'.join(r["row"]["keywords"])
-
-            
-            context = self.tokenizer(context, return_tensors="np")['input_ids'][0].tolist()
-            concept_set_input_ids = self.tokenizer(f"Include:{keyword}; Context:{len(context)}; Target:20", return_tensors="np")['input_ids'][0].tolist()
-            
-            self.record.append({
-                        "item": [0],
-                        "concept_set":concept,
-                        "encode_input":concept_set_input_ids,
-                        "input_ids":context,
-                        "context":context})
-        random.shuffle(self.record)
-        
-
-    def __len__(self):
-        return len(self.record)
-
-    def __getitem__(self, index):
-        item = self.record[index]
-        return item
 
 
 class CommonGenDataset(Dataset):
@@ -72,7 +34,7 @@ class CommonGenDataset(Dataset):
         self.record = []
         with open(json_path) as out:
 
-            lines = json.load(out)
+            lines = json.load(out)[:100]
             
             for item in tqdm(lines):
                 
@@ -104,7 +66,7 @@ class CommonGenDataset(Dataset):
                         "input_ids":c_output_ids+c_output_ids_})
                     
                 else:
-                    concept_set_input_ids = self.tokenizer(f"Include:{concept_set}; Context:{len(c_output_ids)}; Target:20", return_tensors="np")['input_ids'][0].tolist()
+                    concept_set_input_ids = self.tokenizer(f"Include:{concept_set}; Context:{len(c_output_ids)}; Target:16", return_tensors="np")['input_ids'][0].tolist()
                     self.record.append({
                             "item": [0],
                             "concept_set":item['keywords'],
@@ -158,7 +120,6 @@ def data_wrapper(dataset, tokenizer, plm_type):
     new_dataset['encode_input'] = torch.from_numpy(encode_input)
     
 
-        
     
     max_output_len = max([len(d['input_ids']) for d in dataset])
     mask_ids = np.full((batch_size, max_output_len), 1, dtype=np.int64)
