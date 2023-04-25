@@ -154,7 +154,7 @@ def construct_generation_args():
 
 
     
-    parser.add_argument("--output_path", type=str, default="./eval")
+    parser.add_argument("--output_path", type=str, default="../eval")
     parser.add_argument("--mode", type=str, default="ctg", choices=["ctg","train","classifer"])
     parser.add_argument("--evaluate_file", type=str, default="../our_text")
     parser.add_argument("--evaluate_outfile", type=str, default="./eval/our/result.csv")
@@ -199,7 +199,10 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
 
     gts = []
     concept_set = []
+    
     res = []
+    gens_part = []
+    context_part = []
     
     with torch.no_grad():
         for batch in tqdm(eval_data_iter):
@@ -226,14 +229,37 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
                 do_sample= True, # disable sampling to test if batching affects output
             )
             text = []
+            context_text = [] 
+            generated_text = []
             for i in range(len(output_sequences)):
                 text.append(tokenizer.decode(output_sequences[i],skip_special_tokens= True))
+                context_text.append(tokenizer.decode(input_ids[i],skip_special_tokens= True))
+                generated_text.append(tokenizer.decode(output_sequences[i][input_ids.shape[1]:],skip_special_tokens= True))
+
+            text = [t.strip() for t in text]            
+            res += text
             
-            # text = [t.strip().replace("\n", '') for t in text]
-            text = [t.strip() for t in text]
+            context_text = [t.strip() for t in context_text]            
+            context_part += context_text
+            
+            generated_text = [t.strip() for t in generated_text]            
+            gens_part += generated_text
             
             print(text)
-            res += text
+            # print(len(concept_set), len(context_part), len(generated_text), len(res))
+            
+            
+    if args.validation or args.test:
+        
+        for key, c,g,r in zip(concept_set, context_part, gens_part, res):
+            dict_data = {
+                "keywords":key,
+                "context":c,
+                "generated":g,
+                "text":r}
+            addCsv(output_path+"/generated_result.csv", dict_data)
+        print("The result is generated!")
+        exit()
             
     references={}
     hypothesis  = {}
@@ -268,7 +294,6 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
     coverage = 0.0
     time_record = str(datetime.datetime.now()).replace(" ","_")
 
-    
     
     if args.train:
         
@@ -410,6 +435,7 @@ if __name__ == "__main__":
 
     args = construct_generation_args()
     
+    print("Whether Saving_model:", args.saving_model)
     
     seed = args.seed
     random.seed(seed)
@@ -422,12 +448,8 @@ if __name__ == "__main__":
     torch.backends.cudnn.deterministic = True# as reproducibility docs
     set_seed(seed)
 
-    
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     tokenizer.pad_token = tokenizer.eos_token
-    
-
-    
     
     if args.model_type=="Prompt_Residual_Tuning":
         
@@ -455,7 +477,15 @@ if __name__ == "__main__":
     print("args.batch_size:",args.batch_size)
     
     if args.validation or args.test:
-        run_eval(args, model, dev_data_loader, tokenizer, only_test=True, output_path=args.output_path)
+        
+        if args.dataset == "CommonGen":
+            test_data = CommonGenDataset(args.test_path, tokenizer, is_training=False, args=args)
+            test_data_loader = get_data_loader(test_data, args.batch_size)
+            run_eval(args, model, test_data_loader, tokenizer, output_path=args.output_path)
+        else:
+            long_dis_data = C2Gen(args.long_test_path, tokenizer, 1)
+            test_long_loader = get_data_loader(long_dis_data, 1)
+            run_eval(args, model, test_long_loader, tokenizer, output_path=args.output_path)
         exit()
     
     if args.train:
@@ -473,9 +503,15 @@ if __name__ == "__main__":
         
         if args.dataset == "CommonGen":
         
-            train_data = CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
+            # train_data = CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
+            # print("train_data:", len(train_data))
+            # train_data_loader = get_data_loader(train_data, args.batch_size)
+            
+            
+            train_data = kw_CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
             print("train_data:", len(train_data))
             train_data_loader = get_data_loader(train_data, args.batch_size)
+            
 
             dev_data = CommonGenDataset(args.dev_path, tokenizer, is_training=False, args=args)
             dev_data_loader = get_data_loader(dev_data, 50)
@@ -491,17 +527,17 @@ if __name__ == "__main__":
             print("train_data:", len(train_data))
             train_data_loader = get_data_loader(train_data, args.batch_size)
 
-            # long_dis_data = C2Gen(args.long_test_path, tokenizer, args=args)
-            # test_long_loader = get_data_loader(long_dis_data, 1)
-            # task_train(args, model, tokenizer, train_data_loader, test_long_loader, test_long_loader, optimizer, my_lr_scheduler)
+            long_dis_data = C2Gen(args.long_test_path, tokenizer, args=args)
+            test_long_loader = get_data_loader(long_dis_data, 1)
+            task_train(args, model, tokenizer, train_data_loader, test_long_loader, test_long_loader, optimizer, my_lr_scheduler)
             
-            dev_data = CommonGenDataset(args.dev_path, tokenizer, is_training=False, args=args)
-            dev_data_loader = get_data_loader(dev_data, 50)
+#             dev_data = CommonGenDataset(args.dev_path, tokenizer, is_training=False, args=args)
+#             dev_data_loader = get_data_loader(dev_data, 50)
 
-            test_data = CommonGenDataset(args.test_path, tokenizer, is_training=False, args=args)
-            test_data_loader = get_data_loader(test_data, 50)
+#             test_data = CommonGenDataset(args.test_path, tokenizer, is_training=False, args=args)
+#             test_data_loader = get_data_loader(test_data, 50)
 
-            task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler)
+            # task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler)
             
     
     elif  args.train_stage == "general_pretrain":

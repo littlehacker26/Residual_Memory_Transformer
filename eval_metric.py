@@ -19,8 +19,6 @@ import codecs
 from  itertools import zip_longest
 
 
-
-
 from builtins import zip
 from builtins import range
 from past.utils import old_div
@@ -117,9 +115,34 @@ def evaluator_ppl(res, plm_model):
             with torch.no_grad():
                 ppl = cal_ppl_bygpt2(eval_tokenizer, eval_model, 30, i)
                 ppls += ppl
+                
         
     return  np.nanmean(ppls)
-        
+
+
+
+def evaluator_ppl_all(res, plm_model):
+    
+    eval_model = AutoModelForCausalLM.from_pretrained(plm_model).cuda()
+    eval_tokenizer = AutoTokenizer.from_pretrained(plm_model)
+    eval_tokenizer.pad_token = eval_tokenizer.eos_token
+    
+    ppls = []
+
+    references = [v[0] for k,v in res.items()]
+    
+    for i in zip_longest(*([iter(references)] * 120), fillvalue= "xxx"):
+            i = list(i)
+            
+            if len(i)<=1:
+                continue
+            with torch.no_grad():
+                ppl = cal_ppl_bygpt2(eval_tokenizer, eval_model, 30, i)
+                ppls += ppl
+                
+    pp = list(filter(lambda v: v<300.0 , ppls)) ## remove the outliner value
+                
+    return  np.nanmean(pp)        
         
 
 def get_coverage_score(gt_concepts, pred):
@@ -152,8 +175,6 @@ def evaluator_coverage(res):
     score = get_coverage_score(gt_concepts, predictions)
     
     return mean(score)
-    
-    
     
     
     
