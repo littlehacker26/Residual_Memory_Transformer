@@ -1,4 +1,4 @@
-from dataset.dataset import CommonGenDataset, C2Gen, get_data_loader,kw_CommonGenDataset
+from dataset.dataset import CommonGenDataset, C2Gen, get_data_loader,keyword_CommonGenDataset, CommonGenDataset, Length_kw_Dataset, Length_CommonGenDataset
 # from dataset.dataset_keyword import CommonGenDataset as kw_CommonGenDataset
 
 from dataset.wiki_dataset import WikiDataset, WikiDataset_General, get_wiki_data_loader
@@ -128,6 +128,8 @@ def construct_generation_args():
     ## generation configure
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--max_length", type=int, default=20)
+    parser.add_argument("--generated_len", type=int, default=20)
+
     parser.add_argument("--max_prompt_length", type=int, default=10)
     parser.add_argument("--training_sample_num", type=int, default=100)
     
@@ -220,9 +222,9 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
                 input_ids=input_ids,
                 encoder_hidden_states = encode_inputs,
                 attention_mask = attention_mask,
-                max_length =20 + input_ids.shape[1],
+                max_length =args.max_length + input_ids.shape[1],
                 num_beams =4,
-                top_p = 0.6,
+                top_p = 0.5,
                 repetition_penalty=1.25,
                 top_k = 0,
                 no_repeat_ngram_size = 3,
@@ -235,8 +237,11 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
                 text.append(tokenizer.decode(output_sequences[i],skip_special_tokens= True))
                 context_text.append(tokenizer.decode(input_ids[i],skip_special_tokens= True))
                 generated_text.append(tokenizer.decode(output_sequences[i][input_ids.shape[1]:],skip_special_tokens= True))
+                
 
-            text = [t.strip() for t in text]            
+            # text = [t.strip() for t in text]         
+            # text = [t.strip().split(".")[0] for t in text]     
+
             res += text
             
             context_text = [t.strip() for t in context_text]            
@@ -257,7 +262,7 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
                 "context":c,
                 "generated":g,
                 "text":r}
-            addCsv(output_path+"/generated_result.csv", dict_data)
+            addCsv(output_path+f"/generated_result_{args.generated_len}_seed_{args.seed}.csv", dict_data)
         print("The result is generated!")
         exit()
             
@@ -293,6 +298,7 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
     early_stop=0
     coverage = 0.0
     time_record = str(datetime.datetime.now()).replace(" ","_")
+
 
     
     if args.train:
@@ -345,7 +351,7 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
                 outpus_long = run_eval(args, model, test_data_loader, tokenizer, output_path=args.output_path)
                 print(outpus_long)
                 if args.saving_model:
-                    save_model(args, model, 0, time_record)
+                    save_model(args, model, args.seed, time_record+"_"+str(args.memory_p))
             else:
                 early_stop+=1
                 if early_stop>3:
@@ -436,6 +442,7 @@ if __name__ == "__main__":
     args = construct_generation_args()
     
     print("Whether Saving_model:", args.saving_model)
+    print("Text generation max length:",args.max_length)
     
     seed = args.seed
     random.seed(seed)
@@ -483,7 +490,7 @@ if __name__ == "__main__":
             test_data_loader = get_data_loader(test_data, args.batch_size)
             run_eval(args, model, test_data_loader, tokenizer, output_path=args.output_path)
         else:
-            long_dis_data = C2Gen(args.long_test_path, tokenizer, 1)
+            long_dis_data = C2Gen(args.long_test_path, tokenizer, args)
             test_long_loader = get_data_loader(long_dis_data, 1)
             run_eval(args, model, test_long_loader, tokenizer, output_path=args.output_path)
         exit()
@@ -507,19 +514,20 @@ if __name__ == "__main__":
             # print("train_data:", len(train_data))
             # train_data_loader = get_data_loader(train_data, args.batch_size)
             
-            
-            train_data = kw_CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
+            train_data = keyword_CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
             print("train_data:", len(train_data))
             train_data_loader = get_data_loader(train_data, args.batch_size)
             
 
-            dev_data = CommonGenDataset(args.dev_path, tokenizer, is_training=False, args=args)
-            dev_data_loader = get_data_loader(dev_data, 50)
+            # dev_data = CommonGenDataset(args.dev_path, tokenizer, is_training=False, args=args)
+            # dev_data_loader = get_data_loader(dev_data, 50)
 
             test_data = CommonGenDataset(args.test_path, tokenizer, is_training=False, args=args)
             test_data_loader = get_data_loader(test_data, 50)
+            
+#             print(len(dev_data_loader), len(test_data_loader))
 
-            task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler)
+            task_train(args, model, tokenizer, train_data_loader, test_data_loader, test_data_loader, optimizer, my_lr_scheduler)
             
         else:
             

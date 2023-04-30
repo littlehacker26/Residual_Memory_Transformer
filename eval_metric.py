@@ -140,7 +140,7 @@ def evaluator_ppl_all(res, plm_model):
                 ppl = cal_ppl_bygpt2(eval_tokenizer, eval_model, 30, i)
                 ppls += ppl
                 
-    pp = list(filter(lambda v: v<300.0 , ppls)) ## remove the outliner value
+    pp = list(filter(lambda v: v<150.0 , ppls)) ## remove the outliner value
                 
     return  np.nanmean(pp)        
         
@@ -236,6 +236,7 @@ def evaluator_bleu(gts, res):
         trigram.append(score["trigram"][0])
         quagram.append(score["quagram"][0])
         
+        
     return {'bigram':np.mean(bigram), 'trigram':np.mean(trigram), 'quagram':np.mean(quagram)}
 
 
@@ -253,6 +254,8 @@ def evaluator_selfbleu(res):
 
     self_bleu = SelfBLEU(hypotheses, weights)
     score = self_bleu.get_score()
+    
+    
     
     return {'quagram':mean(score['quagram']),'pentagram':mean(score['pentagram'])}
 
