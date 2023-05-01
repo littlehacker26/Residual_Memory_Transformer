@@ -1,4 +1,4 @@
-from dataset.dataset import CommonGenDataset, C2Gen, get_data_loader,keyword_CommonGenDataset, CommonGenDataset, Length_kw_Dataset, Length_CommonGenDataset
+from dataset.dataset_att import Sentiment_Dataset, Senti_Prompt_Data, get_data_loader
 # from dataset.dataset_keyword import CommonGenDataset as kw_CommonGenDataset
 
 from dataset.wiki_dataset import WikiDataset, WikiDataset_General, get_wiki_data_loader
@@ -52,7 +52,6 @@ import torch.nn.functional as F
 # from adaVAE import compute_loss
 from utils import *
 from collections import defaultdict
-from adapters.common import AdapterConfig
 import datetime
 
 import copy as _copy
@@ -80,7 +79,8 @@ from transformers import (
 from transformers.trainer_utils import get_last_checkpoint, is_main_process
 from transformers import GPT2LMHeadModel, AutoTokenizer, AutoModelForMaskedLM
 
-from adapters.distill_tuning_d import Distill_Tuning as Prompt_Residual_Tuning
+from adapters.attribute_distill import Distill_Tuning as Prompt_Residual_Tuning
+
 from adapters.distill_tuning_vanilla import GPT2_Tuning as Vanilla_Prompt_Tuning
 from adapters.distill_tuning import Distill_Tuning as Residual_Tuning
 
@@ -128,6 +128,14 @@ def construct_generation_args():
     parser.add_argument("--temperature", type=float, default=0.1)
     parser.add_argument("--max_length", type=int, default=20)
     parser.add_argument("--generated_len", type=int, default=20)
+    
+    parser.add_argument("--ranking_scope", type=int, default=50)
+    
+    
+    
+    parser.add_argument("--corpus_type", type=str, default="positive")
+    parser.add_argument("--disc_embedding_checkpoint", type=str, default= None)
+    parser.add_argument("--template_disc", type=str, default="(2, 3)")
 
     parser.add_argument("--max_prompt_length", type=int, default=10)
     parser.add_argument("--training_sample_num", type=int, default=100)
@@ -209,17 +217,14 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
             
             encode_inputs =  batch["encode_input"].to(args.device).long() 
             attention_mask = batch["attention_mask"].to(args.device).bool()
-            
-
-            gts += batch["item"]
-            concept_set += batch["concept_set"]
+                        
 
             output_sequences = model.generate(
                 input_ids=input_ids,
                 encoder_hidden_states = encode_inputs,
                 attention_mask = attention_mask,
                 max_length =args.max_length + input_ids.shape[1],
-                num_beams =4,
+                num_beams =1,
                 top_p = 0.5,
                 repetition_penalty=1.25,
                 top_k = 0,
@@ -235,9 +240,6 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
                 generated_text.append(tokenizer.decode(output_sequences[i][input_ids.shape[1]:],skip_special_tokens= True))
                 
 
-            # text = [t.strip() for t in text]         
-            # text = [t.strip().split(".")[0] for t in text]     
-
             res += text
             
             context_text = [t.strip() for t in context_text]            
@@ -247,40 +249,19 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
             gens_part += generated_text
             
             print(text)
-            # print(len(concept_set), len(context_part), len(generated_text), len(res))
             
             
-    if args.validation or args.test:
+#     if args.validation or args.test:
         
-        for key, c,g,r in zip(concept_set, context_part, gens_part, res):
-            dict_data = {
-                "keywords":key,
-                "context":c,
-                "generated":g,
-                "text":r}
-            addCsv(output_path+f"/generated_result_{args.generated_len}_seed_{args.seed}.csv", dict_data)
-        print("The result is generated!")
-        exit()
-            
-    references={}
-    hypothesis  = {}
+#         for key, c,g,r in zip(concept_set, context_part, gens_part, res):
+#             dict_data = {
+#                 "keywords":key,
+#                 "context":c,
+#                 "generated":g,
+#                 "text":r}
+#             addCsv(output_path+f"/generated_result_{args.generated_len}_seed_{args.seed}.csv", dict_data)
+#         print("The result is generated!")
     
-    for g, c, r in zip(gts, concept_set, res):
-        references[c] = g
-        hypothesis[c] = [r]
-
-    res = hypothesis
-    gts = references
-    
-    print("res:", res)
-    
-    cov = evaluator_coverage(res)
-        
-    score_self_bleu = evaluator_selfbleu(res)
-    
-    score_ppl = evaluator_ppl(res, "/home2/zhanghanqing/pretrained_model/gpt2/large")
-    
-    return {"coverage":cov,"self_bleu":score_self_bleu, "ppl": score_ppl}
 
 
 
@@ -309,11 +290,11 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
                     model.train()
                                     
                     input_ids =  batch["input_ids"].to(args.device).long()
-                    mask_ids =  batch["mask_ids"].to(args.device).bool()
                     encode_inputs =  batch["encode_input"].to(args.device).long()
-                    attention_mask =batch["attention_mask"].to(args.device).bool()
-                    
-                    output =  model(encoder_hidden_states=encode_inputs, input_ids = input_ids, token_type_ids = mask_ids, attention_mask=attention_mask)
+                    encode_inputs_ =  batch["encode_input_"].to(args.device).long()
+                    attention_mask =  batch["attention_mask"].to(args.device).bool()
+
+                    output =  model(encoder_hidden_states=encode_inputs, labels=encode_inputs_, input_ids = input_ids, attention_mask=attention_mask)
                     
                     loss = output.loss
                     print("the loss is:", loss)
@@ -330,103 +311,9 @@ def task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_
                     
             my_lr_scheduler.step()
 
-            if epoch+1>=1:
-                output = run_eval(args, model, dev_data_loader, tokenizer, output_path=args.output_path)
-                coverage = output["coverage"]
-                print("coverage:", coverage)
-                print(output)
-            else:
-                coverage = 0.0
-                continue
+            if args.saving_model:
+                save_model(args, model, args.seed, time_record+"_"+str(args.memory_p))    
 
-            if coverage>best_score:
-                early_stop=0
-                best_score = coverage
-                outpus_long = run_eval(args, model, test_data_loader, tokenizer, output_path=args.output_path)
-                print(outpus_long)
-                if args.saving_model:
-                    save_model(args, model, args.seed, time_record+"_"+str(args.memory_p))
-            else:
-                early_stop+=1
-                if early_stop>3:
-                    break
-                        
-    
-    in_csv = {"seed":args.seed,"train_stage": args.train_stage,"dev_cov":best_score}
-    # in_csv.update(outpus_test)
-    in_csv.update(outpus_long)
-    addCsv(result_name_path, in_csv)
-    
-    
-def general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler):
-    
-    
-    result_name_path = f"../pretrain_result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_layer_{args.residual_layer}.csv"
-    
-    result_ppl_path = f"../pretrain_result/{args.model_type}_{args.train_stage}_{args.tuning_mode}_layer_{args.residual_layer}_ppl.csv"
-        
-    best_score = 0.0   
-    early_stop=0
-    coverage = 0.0
-    
-    if args.train:
-        
-        print("len(max_epoch):", args.max_epoch)
-        for epoch in range(args.max_epoch):
-            print('EPOCH %d / %d' % (epoch + 1, args.max_epoch))
-            tot_loss = 0
-            model.train()
-            
-            step = 0 
-            step_count=0
-            step_log = 0
-            
-            for batch_idx, batch in tqdm(enumerate(train_data_loader)):
-                    model.train()
-                                    
-                    x_token = batch["concept_set_input_ids"].to(args.device).long()
-                    input_ids =  batch["c_output_ids"].to(args.device).long()
-                    
-                    _,output =  model(x_token, input_ids)
-                    loss = output
-                    print("the loss is:", loss)
-                    
-                    tot_loss += loss.item()
-
-                    loss.backward()
-                    torch.cuda.empty_cache()
-                    optimizer.step()
-                    torch.cuda.empty_cache()
-                    optimizer.zero_grad()
-            
-                    step += args.batch_size
-                    step_count += args.batch_size
-                    step_log += args.batch_size
-                
-                    print(f"epoch is {epoch}, and step size is:{step}")
-                    
-                    
-                    if step_log>args.step_log:
-                        step_log = 0
-                        ppl = run_eval_ppl(args, model, dev_data_loader, tokenizer, only_test=True, output_path=args.output_path)
-                        in_csv = {"step":step, "ppl":ppl,"loss": round(tot_loss/args.step_size,2)}
-                        addCsv(result_ppl_path,in_csv)
-                                            
-                    
-                    if step_count>args.step_size:
-                        ppl = run_eval_ppl(args, model, dev_data_loader, tokenizer, only_test=True, output_path=args.output_path)
-                        print("ppl:", ppl)
-                        save_model(args, model, step, round(ppl,2))
-                        my_lr_scheduler.step()
-
-                        in_csv = {"epoch":epoch,"step":step, "ppl":ppl,"loss": round(tot_loss/args.step_size,2)}
-                        addCsv(result_name_path,in_csv)
-
-                        tot_loss = 0
-                        step_count=0
-                        
-                    if step> 4001000:
-                        exit()                        
 
 
 
@@ -452,21 +339,11 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     tokenizer.pad_token = tokenizer.eos_token
     
-    if args.model_type=="Prompt_Residual_Tuning":
         
-        model = Prompt_Residual_Tuning.from_pretrained(args.model_name_or_path)
-        model.init_post(args)
-    
-    elif args.model_type=="Residual_Tuning":
-        model = Residual_Tuning(args, args.template)
+    model = Prompt_Residual_Tuning.from_pretrained(args.model_name_or_path)
+    model.init_post(args)    
+
         
-    elif args.model_type=="Vanilla_Prompt_Tuning":
-        
-        model = Vanilla_Prompt_Tuning.from_pretrained(args.model_name_or_path)
-        model.init_post(args)
-        
-    else:
-        raise Exception("the task is out of scope!")
     
     if args.check_point_load != None and  hasattr(model, 'prompt_encoder'):
         model.prompt_encoder.load_state_dict(load_prompt(args.check_point_load))
@@ -479,15 +356,16 @@ if __name__ == "__main__":
     
     if args.validation or args.test:
         
-        if args.dataset == "CommonGen":
-            test_data = CommonGenDataset(args.test_path, tokenizer, is_training=False, args=args)
-            test_data_loader = get_data_loader(test_data, args.batch_size)
-            run_eval(args, model, test_data_loader, tokenizer, output_path=args.output_path)
-        else:
-            long_dis_data = C2Gen(args.long_test_path, tokenizer, args)
-            test_long_loader = get_data_loader(long_dis_data, 1)
-            run_eval(args, model, test_long_loader, tokenizer, output_path=args.output_path)
+        test_data = Senti_Prompt_Data(args.test_path, tokenizer, is_training=False, args=args)
+        
+        test_data_loader = get_data_loader(test_data, args.batch_size)
+        
+        run_eval(args, model, test_data_loader, tokenizer, output_path=args.output_path)
+  
         exit()
+        
+        
+    
     
     if args.train:
 
@@ -499,58 +377,16 @@ if __name__ == "__main__":
         else:
             my_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=2, gamma=0.5)
             
-        
-    if args.train_stage == "fine_tuning":
-        
-        if args.dataset == "CommonGen":
-        
-            # train_data = CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
-            # print("train_data:", len(train_data))
-            # train_data_loader = get_data_loader(train_data, args.batch_size)
             
-            train_data = keyword_CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
-            print("train_data:", len(train_data))
-            train_data_loader = get_data_loader(train_data, args.batch_size)
+        train_data = Sentiment_Dataset(args.train_path, tokenizer, is_training=True, args=args)
+        print("train_data:", len(train_data))
+        train_data_loader = get_data_loader(train_data, args.batch_size)
             
 
-            # dev_data = CommonGenDataset(args.dev_path, tokenizer, is_training=False, args=args)
-            # dev_data_loader = get_data_loader(dev_data, 50)
-
-            test_data = CommonGenDataset(args.test_path, tokenizer, is_training=False, args=args)
-            test_data_loader = get_data_loader(test_data, 50)
+        task_train(args, model, tokenizer, train_data_loader, None, None, optimizer, my_lr_scheduler)
             
-#             print(len(dev_data_loader), len(test_data_loader))
 
-            task_train(args, model, tokenizer, train_data_loader, test_data_loader, test_data_loader, optimizer, my_lr_scheduler)
-            
-        else:
-            
-            train_data = kw_CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
-            print("train_data:", len(train_data))
-            train_data_loader = get_data_loader(train_data, args.batch_size)
 
-            long_dis_data = C2Gen(args.long_test_path, tokenizer, args=args)
-            test_long_loader = get_data_loader(long_dis_data, 1)
-            task_train(args, model, tokenizer, train_data_loader, test_long_loader, test_long_loader, optimizer, my_lr_scheduler)
-            
-#             dev_data = CommonGenDataset(args.dev_path, tokenizer, is_training=False, args=args)
-#             dev_data_loader = get_data_loader(dev_data, 50)
-
-#             test_data = CommonGenDataset(args.test_path, tokenizer, is_training=False, args=args)
-#             test_data_loader = get_data_loader(test_data, 50)
-
-            # task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler)
-            
-    
-    elif  args.train_stage == "general_pretrain":
-        
-        train_dataset = WikiDataset_General(args.pretrain_path, tokenizer, is_training=True, args=args)
-        train_data_loader = get_wiki_data_loader(train_dataset, args.batch_size)
-
-        dev_dataset = WikiDataset_General(args.pretrain_path_val, tokenizer, is_training=True, args=args)
-        dev_data_loader = get_wiki_data_loader(dev_dataset, args.batch_size)
-
-        general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader, None, optimizer, my_lr_scheduler)
         
 
         
