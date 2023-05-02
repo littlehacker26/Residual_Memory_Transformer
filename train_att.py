@@ -251,16 +251,15 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
             print(text)
             
             
-#     if args.validation or args.test:
+    if args.validation or args.test:
         
-#         for key, c,g,r in zip(concept_set, context_part, gens_part, res):
-#             dict_data = {
-#                 "keywords":key,
-#                 "context":c,
-#                 "generated":g,
-#                 "text":r}
-#             addCsv(output_path+f"/generated_result_{args.generated_len}_seed_{args.seed}.csv", dict_data)
-#         print("The result is generated!")
+        for c,g,r in zip(context_part, gens_part, res):
+            dict_data = {
+                "context":c,
+                "generated":g,
+                "text":r}
+            addCsv(output_path+f"/generated_result_{args.generated_len}_seed_{args.seed}.csv", dict_data)
+        print("The result is generated!")
     
 
 

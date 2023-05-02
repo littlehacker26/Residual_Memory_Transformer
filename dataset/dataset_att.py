@@ -94,7 +94,7 @@ class Senti_Prompt_Data(Dataset):
             for item in jsonlines.Reader(f):
                 prompt = item["prompt"]["text"]
             
-                context = self.tokenizer(prompt, return_tensors="np")['input_ids'][0].tolist()
+                context = self.tokenizer(prompt.strip(), return_tensors="np")['input_ids'][0].tolist()
                 
                 concept_set_input_ids = self.tokenizer(f"Sentiment: Positive", return_tensors="np")['input_ids'][0].tolist()
                 concept_set_input_ids_ = self.tokenizer(f"Sentiment: Negative", return_tensors="np")['input_ids'][0].tolist()
@@ -131,6 +131,13 @@ def data_wrapper(dataset, tokenizer, is_training):
             concept_set_input[i, :len(data)] = data
         new_dataset['input_ids'] = torch.from_numpy(concept_set_input)
         
+        
+        max_output_len = max([len(d['input_ids']) for d in dataset])
+        mask_ids = np.full((batch_size, max_output_len), 0, dtype=np.int64)
+        for i, d in enumerate(dataset):
+            mask_ids[i, :len(d['input_ids'])] = 1
+        new_dataset['attention_mask'] = torch.from_numpy(mask_ids)
+        
     else:
         max_concept_len = max([len(d['input_ids']) for d in dataset])
         concept_set_input = np.full((batch_size, max_concept_len), _PAD, dtype=np.int64)
@@ -140,11 +147,13 @@ def data_wrapper(dataset, tokenizer, is_training):
         new_dataset['input_ids'] = torch.from_numpy(concept_set_input)
         
         
-    max_output_len = max([len(d['input_ids']) for d in dataset])
-    mask_ids = np.full((batch_size, max_output_len), 0, dtype=np.int64)
-    for i, d in enumerate(dataset):
-        mask_ids[i, :len(d['input_ids'])] = 1
-    new_dataset['attention_mask'] = torch.from_numpy(mask_ids)
+        max_output_len = max([len(d['input_ids']) for d in dataset])
+        mask_ids = np.full((batch_size, max_output_len), 0, dtype=np.int64)
+        for i, d in enumerate(dataset):
+            mask_ids[i, -len(d['input_ids']):] = 1
+        new_dataset['attention_mask'] = torch.from_numpy(mask_ids)        
+        
+
     
        
     max_concept_len = max([len(d['encode_input']) for d in dataset])

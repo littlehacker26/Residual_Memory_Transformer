@@ -11,7 +11,7 @@ model_name_or_path="/home2/zhanghanqing/pretrained_model/gpt2/large"
 # check_point_load="../check_point/pretrain/prompt_model/4_layer_epoch_4000128_metric_1.68.ckpt"
 check_point_load="../check_point/pretrain/prompt_model/layer_3_epoch_4000128_metric_1.7.ckpt"
 
-ranking_scope=30
+ranking_scope=70
 disc_embedding_checkpoint="/home2/zhanghanqing/Future_decoding/sentiment_model/small/prompt_model/prompt_tuning_positive_lr_0.3_temperature0.01_scope_50_epoch_15_f1_0.96_(2,3).ckpt"
 template_disc="(2,3)"
 
@@ -32,7 +32,7 @@ residual_layer=3
 
 out_dir="../check_point/trained"
 batch_size=64
-max_epoch=6
+max_epoch=5
 
 
 for seed in 1
