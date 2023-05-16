@@ -155,7 +155,7 @@ def construct_generation_args():
     parser.add_argument("--dataset", type=str, default="CommonGen", choices=["CommonGen","keyword","roc"])
 
 
-    # parser.add_argument("--top_k", type=int, default=3)
+    parser.add_argument("--number_beam", type=int, default=4)
     parser.add_argument("--top_p", type=float, default=0.95)
     parser.add_argument("--memory_p", type=float, default=0.5)
 
@@ -215,22 +215,29 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
             
             input_ids =  batch["input_ids"].to(args.device).long()
             
-            encode_inputs =  batch["encode_input"].to(args.device).long() 
+            # encode_inputs =  batch["encode_input"].to(args.device).long() 
+            encode_inputs =  batch["encode_input_"].to(args.device).long()
+                
             attention_mask = batch["attention_mask"].to(args.device).bool()
                         
-
+            # start = datetime.datetime.now()
+            
             output_sequences = model.generate(
                 input_ids=input_ids,
                 encoder_hidden_states = encode_inputs,
                 attention_mask = attention_mask,
                 max_length =args.max_length + input_ids.shape[1],
-                num_beams =1,
-                top_p = 0.5,
+                num_beams =args.number_beam,
+                top_p = 0.7,
                 repetition_penalty=1.25,
                 top_k = 0,
                 no_repeat_ngram_size = 3,
                 do_sample= True, # disable sampling to test if batching affects output
             )
+            
+            # end = datetime.datetime.now()
+            # print("runing time is:",end-start)
+            
             text = []
             context_text = [] 
             generated_text = []

@@ -231,7 +231,7 @@ class keyword_CommonGenDataset(Dataset):
                 else:
                     c_output_ids_ = self.tokenizer(" "+t, return_tensors="np")['input_ids'][0].tolist()
                 
-                if (len(c_output_ids_)+len(c_output_ids))>200:
+                if (len(c_output_ids_)+len(c_output_ids))>190:
                     continue
                 
                 if self.is_training:

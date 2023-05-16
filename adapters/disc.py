@@ -50,6 +50,9 @@ class DISC(torch.nn.Module):
             self.prompt_encoder_disc = self.prompt_encoder_disc.to(self.args.device)
             self.prompt_encoder_disc.load_state_dict(self.load_prompt(self.args.disc_embedding_checkpoint))
             self.pseudo_token_id = self.tokenizer.convert_tokens_to_ids(self.args.pseudo_token)
+            
+            
+            
 
             
     def load_prompt(self, embedding_checkpoint):

@@ -225,8 +225,7 @@ class Distill_Tuning(GPT2LMHeadModel):
         _loss = -(_y * (1-x+1e-20).log()).sum() / x.size(0)
 
         return  loss_ + _loss
-    
-    
+
     
     
     

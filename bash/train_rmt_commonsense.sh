@@ -1,4 +1,4 @@
-train_path="../data/wiki_train.json"
+train_path="../data/wiki_train_common.json"
 
 dev_path="../../data/commongen.dev.jsonl"
 test_path="../../data/commongen.test.jsonl"
@@ -28,12 +28,12 @@ residual_layer=3
 
 out_dir="../check_point/trained"
 batch_size=64
-max_epoch=6
+max_epoch=5
 
 
 for seed in 42
     do
-        CUDA_VISIBLE_DEVICES=0  python ../train.py   --train  --saving_model --model_name_or_path $model_name_or_path --train_path $train_path  --dev_path $dev_path --test_path $test_path --batch_size $batch_size  --max_epoch $max_epoch --out_dir $out_dir --seed $seed  --pretrain_plm $pretrain_plm --top_p $top_p  --tuning_mode $tuning_mode --training_sample_num $training_sample_num --temperature $temperature --lr $lr  --train_stage $train_stage --pretrain_path $pretrain_path --step_size $step_size --pretrain_path_val $pretrain_path_val  --long_test_path $long_test_path --model_type $model_type --memory_p $memory_p  --residual_layer $residual_layer  --dataset $dataset --check_point_load $check_point_load
+        CUDA_VISIBLE_DEVICES=0  python ../train.py   --train  --saving_model --model_name_or_path $model_name_or_path --train_path $train_path  --dev_path $dev_path --test_path $test_path --batch_size $batch_size  --max_epoch $max_epoch --out_dir $out_dir --seed $seed  --pretrain_plm $pretrain_plm --top_p $top_p  --tuning_mode $tuning_mode --training_sample_num $training_sample_num --temperature $temperature --lr $lr  --train_stage $train_stage --pretrain_path $pretrain_path --step_size $step_size --pretrain_path_val $pretrain_path_val  --long_test_path $long_test_path --model_type $model_type --memory_p $memory_p  --residual_layer $residual_layer  --dataset $dataset #--check_point_load $check_point_load
             
     done
 

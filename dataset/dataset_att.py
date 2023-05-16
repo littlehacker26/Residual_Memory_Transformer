@@ -31,35 +31,26 @@ class Sentiment_Dataset(Dataset):
         self.record = []
         with open(json_path) as out:
 
-            lines = json.load(out)
+            lines = out.readlines()
             
             for item in tqdm(lines):
                 
-                c = item["content"]
+                c = item
                 c = c.strip()
                 c_output_ids = self.tokenizer(c, return_tensors="np")['input_ids'][0].tolist()
-                
-                t = item["target"]
-                t = t.strip()                
-                
-                if len(c_output_ids)==0:
-                    c_output_ids_ = self.tokenizer(t, return_tensors="np")['input_ids'][0].tolist()                    
-                else:
-                    c_output_ids_ = self.tokenizer(" "+t, return_tensors="np")['input_ids'][0].tolist()
-                
-                if (len(c_output_ids_)+len(c_output_ids))>200:
-                    continue
                     
                 concept_set_input_ids = self.tokenizer(f"Sentiment: Positive", return_tensors="np")['input_ids'][0].tolist()
                 concept_set_input_ids_ = self.tokenizer(f"Sentiment: Negative", return_tensors="np")['input_ids'][0].tolist()
+                
+                if len(c_output_ids)>150:
+                    continue
 
                 self.record.append({
                         "encode_input":concept_set_input_ids,
                         "encode_input_":concept_set_input_ids_,
                         "context":c_output_ids,
-                        "input_ids":c_output_ids+c_output_ids_})
+                        "input_ids":c_output_ids})
                     
-              
         if self.is_training: random.shuffle(self.record)
 
     def __len__(self):
@@ -69,6 +60,66 @@ class Sentiment_Dataset(Dataset):
         item = self.record[index]
 
         return item
+
+
+# class Sentiment_Dataset(Dataset):
+
+#     def __init__(self, json_path, tokenizer, is_training=True, args=None):
+#         super(Sentiment_Dataset, self).__init__()
+
+#         self.tokenizer = tokenizer
+#         self.is_training = is_training
+#         np.set_printoptions(threshold=sys.maxsize)
+#         self.args = args
+        
+#         self.tokenizer.padding_side = "right"
+#         self.read_content(json_path)
+        
+        
+#     def read_content(self, json_path):
+#         print("reading data from %s ..." % json_path)
+#         self.record = []
+#         with open(json_path) as out:
+
+#             # lines = json.load(out)
+#             lines = out.readlines()
+            
+#             for item in tqdm(lines):
+                
+#                 c = item["content"]
+#                 c = c.strip()
+#                 c_output_ids = self.tokenizer(c, return_tensors="np")['input_ids'][0].tolist()
+                
+#                 t = item["target"]
+#                 t = t.strip()                
+                
+#                 if len(c_output_ids)==0:
+#                     c_output_ids_ = self.tokenizer(t, return_tensors="np")['input_ids'][0].tolist()                    
+#                 else:
+#                     c_output_ids_ = self.tokenizer(" "+t, return_tensors="np")['input_ids'][0].tolist()
+                
+#                 if (len(c_output_ids_)+len(c_output_ids))>200:
+#                     continue
+                    
+#                 concept_set_input_ids = self.tokenizer(f"Sentiment: Positive", return_tensors="np")['input_ids'][0].tolist()
+#                 concept_set_input_ids_ = self.tokenizer(f"Sentiment: Negative", return_tensors="np")['input_ids'][0].tolist()
+
+#                 self.record.append({
+#                         "encode_input":concept_set_input_ids,
+#                         "encode_input_":concept_set_input_ids_,
+#                         "context":c_output_ids,
+#                         "input_ids":c_output_ids+c_output_ids_})
+                    
+              
+#         if self.is_training: random.shuffle(self.record)
+
+#     def __len__(self):
+#         return len(self.record)
+
+#     def __getitem__(self, index):
+#         item = self.record[index]
+
+#         return item
 
     
 

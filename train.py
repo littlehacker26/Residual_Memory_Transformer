@@ -146,7 +146,7 @@ def construct_generation_args():
     parser.add_argument("--model_type", type=str, default="Vanilla_Prompt_Tuning", choices=["Residual_Tuning","Prompt_Residual_Tuning","Vanilla_Prompt_Tuning"])
     parser.add_argument("--dataset", type=str, default="CommonGen", choices=["CommonGen","keyword","roc"])
 
-
+    parser.add_argument("--number_beam", type=int, default=4)
     # parser.add_argument("--top_k", type=int, default=3)
     parser.add_argument("--top_p", type=float, default=0.95)
     parser.add_argument("--memory_p", type=float, default=0.5)
@@ -219,8 +219,8 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
                 encoder_hidden_states = encode_inputs,
                 attention_mask = attention_mask,
                 max_length =args.max_length + input_ids.shape[1],
-                num_beams =4,
-                top_p = 0.5,
+                num_beams =args.number_beam,
+                top_p = 0.8,
                 repetition_penalty=1.25,
                 top_k = 0,
                 no_repeat_ngram_size = 3,
@@ -525,7 +525,7 @@ if __name__ == "__main__":
             
         else:
             
-            train_data = kw_CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
+            train_data = keyword_CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
             print("train_data:", len(train_data))
             train_data_loader = get_data_loader(train_data, args.batch_size)
 
