@@ -1,4 +1,5 @@
 check_point/
+pretrain_result/
 eval/
 result/
 .ipynb_checkpoints/
