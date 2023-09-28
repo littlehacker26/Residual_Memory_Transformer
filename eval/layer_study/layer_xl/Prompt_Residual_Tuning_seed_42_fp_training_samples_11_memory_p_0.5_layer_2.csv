@@ -1,2 +1,0 @@
-seed,train_stage,dev_cov,coverage,self_bleu,ppl
-42,fine_tuning,89.26308291132318,88.98225351491322,"{'quagram': 0.3656314064298846, 'pentagram': 0.23004406815839518}",68.85504191417095
