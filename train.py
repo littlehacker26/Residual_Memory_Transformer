@@ -126,7 +126,7 @@ def construct_generation_args():
     
     ## generation configure
     parser.add_argument("--temperature", type=float, default=0.1)
-    parser.add_argument("--max_length", type=int, default=20)
+    parser.add_argument("--max_length", type=int, default=32)
     parser.add_argument("--generated_len", type=int, default=20)
 
     parser.add_argument("--max_prompt_length", type=int, default=10)
@@ -139,9 +139,7 @@ def construct_generation_args():
     parser.add_argument("--residual_layer", type=int, default=4)
 
     
-    # parser.add_argument("--pattern", type=str, default="vanilla", choices=["dynamic_prompt_max","dynamic_prompt_mean","dynamic_prompt_hybird","vanilla"])
     parser.add_argument("--tuning_mode", type=str, default="pt", choices=["fp","pt"])
-    parser.add_argument("--pretrain_plm", type=str, default="gpt", choices=["gpt","t5"])
     parser.add_argument("--train_stage", type=str, default="fine_tuning", choices=["fine_tuning","general_pretrain","control_pretrain"])
     parser.add_argument("--model_type", type=str, default="Vanilla_Prompt_Tuning", choices=["Residual_Tuning","Prompt_Residual_Tuning","Vanilla_Prompt_Tuning"])
     parser.add_argument("--dataset", type=str, default="CommonGen", choices=["CommonGen","keyword","roc"])
@@ -160,22 +158,20 @@ def construct_generation_args():
     
    
     parser.add_argument("--check_point_load", type=str, default= None)
-    parser.add_argument("--copy_vocab_path", type=str, default= None)
     parser.add_argument("--train_path", type=str, default= None)
     parser.add_argument("--dev_path", type=str, default= None)
     parser.add_argument("--test_path", type=str, default= None)
     parser.add_argument("--pretrain_path", type=str, default= None)
     parser.add_argument("--pretrain_path_val", type=str, default= None)
     parser.add_argument("--long_test_path", type=str, default= None)
-
     
     parser.add_argument('--train', action='store_true')
     parser.add_argument('--validation', action='store_true')
     parser.add_argument('--test', action='store_true')
-    
     parser.add_argument('--saving_model', action='store_true')
+    parser.add_argument('--length_control', action='store_true')
+    parser.add_argument('--distribution_constraint', action='store_true')
 
-    
     args = parser.parse_args()
     # post-parsing args
     args.device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -234,21 +230,28 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
                 context_text.append(tokenizer.decode(input_ids[i],skip_special_tokens= True))
                 generated_text.append(tokenizer.decode(output_sequences[i][input_ids.shape[1]:],skip_special_tokens= True))
                 
-
-            # text = [t.strip() for t in text]         
-            # text = [t.strip().split(".")[0] for t in text]     
-
-            res += text
+            texts = []
             
+            for t in text:
+                a = t.strip()
+                if args.dataset == "CommonGen":
+                    if '.' in a:
+                        tmp = a.split(".")[0] + '.'
+                        texts.append(tmp)
+                    else:
+                        texts.append(a)
+                else:
+                    texts.append(a)
+
+            res += texts
             context_text = [t.strip() for t in context_text]            
             context_part += context_text
             
             generated_text = [t.strip() for t in generated_text]            
             gens_part += generated_text
             
-            print(text)
-            # print(len(concept_set), len(context_part), len(generated_text), len(res))
-            
+            print(texts)
+                        
             
     if args.validation or args.test:
         
@@ -495,7 +498,7 @@ if __name__ == "__main__":
         optimizer = torch.optim.AdamW(params,  weight_decay= args.weight_decay,lr=args.lr)
         
         if args.train_stage == "fine_tuning":
-            my_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size= 3, gamma=0.2)
+            my_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size= 3, gamma=0.5)
         else:
             my_lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=2, gamma=0.5)
             
@@ -503,34 +506,32 @@ if __name__ == "__main__":
     if args.train_stage == "fine_tuning":
         
         if args.dataset == "CommonGen":
-        
-            # train_data = CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
-            # print("train_data:", len(train_data))
-            # train_data_loader = get_data_loader(train_data, args.batch_size)
             
             train_data = keyword_CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
             print("train_data:", len(train_data))
             train_data_loader = get_data_loader(train_data, args.batch_size)
             
 
-            # dev_data = CommonGenDataset(args.dev_path, tokenizer, is_training=False, args=args)
-            # dev_data_loader = get_data_loader(dev_data, 50)
+            dev_data = CommonGenDataset(args.dev_path, tokenizer, is_training=False, args=args)
+            dev_data_loader = get_data_loader(dev_data, 50)
 
             test_data = CommonGenDataset(args.test_path, tokenizer, is_training=False, args=args)
             test_data_loader = get_data_loader(test_data, 50)
             
-#             print(len(dev_data_loader), len(test_data_loader))
+            print(len(dev_data_loader), len(test_data_loader))
 
-            task_train(args, model, tokenizer, train_data_loader, test_data_loader, test_data_loader, optimizer, my_lr_scheduler)
+            task_train(args, model, tokenizer, train_data_loader, dev_data_loader, test_data_loader, optimizer, my_lr_scheduler)
             
         else:
             
             train_data = keyword_CommonGenDataset(args.train_path, tokenizer, is_training=True, args=args)
             print("train_data:", len(train_data))
             train_data_loader = get_data_loader(train_data, args.batch_size)
+            
 
             long_dis_data = C2Gen(args.long_test_path, tokenizer, args=args)
             test_long_loader = get_data_loader(long_dis_data, 1)
+            
             task_train(args, model, tokenizer, train_data_loader, test_long_loader, test_long_loader, optimizer, my_lr_scheduler)
             
 #             dev_data = CommonGenDataset(args.dev_path, tokenizer, is_training=False, args=args)
@@ -548,11 +549,10 @@ if __name__ == "__main__":
         train_data_loader = get_wiki_data_loader(train_dataset, args.batch_size)
 
         dev_dataset = WikiDataset_General(args.pretrain_path_val, tokenizer, is_training=True, args=args)
-        dev_data_loader = get_wiki_data_loader(dev_dataset, args.batch_size)
+        dev_data_loader = get_wiki_data_loader(dev_dataset, args.batch_size-20)
 
         general_pretrain(args, model, tokenizer, train_data_loader, dev_data_loader, None, optimizer, my_lr_scheduler)
         
-
         
     else:
          raise Exception("the task is out of scope!")

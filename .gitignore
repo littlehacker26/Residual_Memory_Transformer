@@ -2,3 +2,14 @@ check_point/
 result/
 .ipynb_checkpoints/
 **/__pycache__
+check_point_load/
+data_pre_v1.py
+static.ipynb
+Untitled.ipynb
+sentiment-Copy1.ipynb
+/bash/eval_rmt_test_time.sh
+/bash/train_rmt_att_.sh
+/bash/train_rmt_commonsense_xl.sh
+/bash/train_rmt_commonsense_layer_study.sh
+data_
+

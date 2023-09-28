@@ -34,9 +34,26 @@ class Transformer_Decoder(nn.TransformerDecoderLayer):
         
         self.self_attn_casual = MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first,
                                             **factory_kwargs)
-                
         self.norm4 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
         self.dropout4 = Dropout(dropout)
+
+        
+        # self.self_attn_casual_mid = MultiheadAttention(d_model, nhead, dropout=dropout, batch_first=batch_first,
+        #                                     **factory_kwargs)
+        # self.norm5 = LayerNorm(d_model, eps=layer_norm_eps, **factory_kwargs)
+        # self.dropout5 = Dropout(dropout)
+
+
+        
+#     def _sa_block_casual_mid(self, x: Tensor, memory: Tensor,
+#                   attn_mask: Optional[Tensor], key_padding_mask: Optional[Tensor]) -> Tensor:
+        
+#         x = self.self_attn_casual_mid(x, memory, memory,
+#                            attn_mask=attn_mask,
+#                            key_padding_mask=key_padding_mask,
+#                            need_weights=False)[0]
+        
+#         return self.dropout5(x)
 
         
         
@@ -71,16 +88,25 @@ class Transformer_Decoder(nn.TransformerDecoderLayer):
             # see Fig. 1 of https://arxiv.org/pdf/2002.04745v1.pdf
 
             x = tgt
-            x1 = tgt_
+            x1 = tgt_[-1]
+            # x2= tgt_[-20]
             
             if self.norm_first:
                 x = x + self._sa_block(self.norm1(x), tgt_mask, tgt_key_padding_mask)
+                
+                # x = x +  self._sa_block_casual_mid(self.norm5(x), x2, tgt_mask, tgt_key_padding_mask)
+                
                 x = x +  self._sa_block_casual(self.norm4(x), x1, tgt_mask, tgt_key_padding_mask)
+                
                 x = x + self._mha_block(self.norm2(x), memory, memory_mask, memory_key_padding_mask)
                 x = x + self._ff_block(self.norm3(x))
             else:
                 x = self.norm1(x + self._sa_block(x, tgt_mask, tgt_key_padding_mask))
+                
+                # x = self.norm5(x+ self._sa_block_casual_mid(x, x2, tgt_mask, tgt_key_padding_mask))
+                
                 x = self.norm4(x+ self._sa_block_casual(x, x1, tgt_mask, tgt_key_padding_mask))
+                
                 x = self.norm2(x + self._mha_block(x, memory, memory_mask, memory_key_padding_mask))
                 x = self.norm3(x + self._ff_block(x))
 

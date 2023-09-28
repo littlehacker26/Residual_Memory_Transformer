@@ -140,7 +140,7 @@ def evaluator_ppl_all(res, plm_model):
                 ppl = cal_ppl_bygpt2(eval_tokenizer, eval_model, 30, i)
                 ppls += ppl
                 
-    pp = list(filter(lambda v: v<150.0 , ppls)) ## remove the outliner value
+    pp = list(filter(lambda v: v<140.0 , ppls)) ## remove the outliner value
                 
     return  np.nanmean(pp)        
         
@@ -192,7 +192,6 @@ def evaluator_cider(gts, res):
        
     score, scores = Cider().compute_score(gts, res)
     
-    
     return score
 
 
@@ -200,18 +199,13 @@ def evaluator_meteor(gts, res):
     
     predictions = [v[0] for k,v in res.items()]
     references = [v for k,v in gts.items()]
-    
     meteor = evaluate.load('meteor')
-   
     results = meteor.compute(predictions=predictions, references=references)
     
     return round(results['meteor'], 2)
 
 
-    
-
 def evaluator_bleu(gts, res):
-    
     
     gts = tokenize(gts)
     res = tokenize(res)
@@ -255,10 +249,7 @@ def evaluator_selfbleu(res):
     self_bleu = SelfBLEU(hypotheses, weights)
     score = self_bleu.get_score()
     
-    
-    
     return {'quagram':mean(score['quagram']),'pentagram':mean(score['pentagram'])}
-
 
 
 
@@ -530,7 +521,6 @@ class NISTScore(NGramScore):
         return bp * nist_sum
 
 
-
 if __name__=='__main__':
 
 
@@ -555,7 +545,7 @@ if __name__=='__main__':
     score = evaluator_selfbleu(res)
     print("self bleu:", score)
     
-    score = evaluator_ppl(res, "/home2/zhanghanqing/pretrained_model/gpt2/large")
+    score = evaluator_ppl(res, "/home/xxxxxx/pretrained_model/gpt2/large")
     print("PPL: %0.3f" %score)
     
     

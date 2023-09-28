@@ -73,7 +73,7 @@ class WikiDataset_General(Dataset):
             _concept_set_input_ids = deepcopy(concept_set_input_ids)
             
                 
-            if sentinal_positions[0]%6<3:# replace span on the prob of 1/2
+            if sentinal_positions[0]%6<6:# replace span on the prob of 1/2
                 for i in sentinal_positions:
                     _concept_set_input_ids[i] = self.mask_token_id
                 
@@ -88,20 +88,21 @@ class WikiDataset_General(Dataset):
                         flag=0
                         new_a.append(i)
                 _concept_set_input_ids = new_a
+                
                     
-            elif sentinal_positions[0]%6==3:# Document rotation on the prob of 1/6
-                _concept_set_input_ids = _concept_set_input_ids[sentinal_positions[0]:]+_concept_set_input_ids[: sentinal_positions[0]]
+#             elif sentinal_positions[0]%6==3:# Document rotation on the prob of 1/6
+#                 _concept_set_input_ids = _concept_set_input_ids[sentinal_positions[0]:]+_concept_set_input_ids[: sentinal_positions[0]]
                                 
                 
-            elif sentinal_positions[0]%6==4: # delete operation on the prob of 1/6
-                for i in sentinal_positions:
-                    _concept_set_input_ids[i] = self.mask_token_id
-                _concept_set_input_ids= list(filter(lambda x: x!=self.mask_token_id, _concept_set_input_ids))
+#             elif sentinal_positions[0]%6==4: # delete operation on the prob of 1/6
+#                 for i in sentinal_positions:
+#                     _concept_set_input_ids[i] = self.mask_token_id
+#                 _concept_set_input_ids= list(filter(lambda x: x!=self.mask_token_id, _concept_set_input_ids))
                 
-            elif sentinal_positions[0]%6==5: # inseration mask token on the prob of 1/6
-                sentinal_positions.sort()
-                for index, pos in enumerate(sentinal_positions):
-                    _concept_set_input_ids.insert(pos+index, self.mask_token_id)
+#             elif sentinal_positions[0]%6==5: # inseration mask token on the prob of 1/6
+#                 sentinal_positions.sort()
+#                 for index, pos in enumerate(sentinal_positions):
+#                     _concept_set_input_ids.insert(pos+index, self.mask_token_id)
                 
             res.append({
                         "concept_set_input_ids":_concept_set_input_ids,

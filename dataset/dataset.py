@@ -235,11 +235,12 @@ class keyword_CommonGenDataset(Dataset):
                     continue
                 
                 if self.is_training:
-                    # concept_set_input_ids = self.tokenizer(f"Include:{concept_set}; Context:{len(c_output_ids)}", return_tensors="np")['input_ids'][0].tolist()
                     
-                    concept_set_input_ids = self.tokenizer(f"Include:{concept_set}; Context:{len(c_output_ids)}; Target:{len(c_output_ids_)}", return_tensors="np")['input_ids'][0].tolist()
-                    # concept_set_input_ids = self.tokenizer(f"Include:{concept_set}", return_tensors="np")['input_ids'][0].tolist()
-
+                    if self.args.length_control:
+                        concept_set_input_ids = self.tokenizer(f"Include:{concept_set}; Context:{len(c_output_ids)}; Target:{len(c_output_ids_)}", return_tensors="np")['input_ids'][0].tolist()
+                        
+                    else:
+                        concept_set_input_ids = self.tokenizer(f"Include:{concept_set}; Context:{len(c_output_ids)}; Target:0", return_tensors="np")['input_ids'][0].tolist()
                     self.record.append({
                         "item": [0],
                         "concept_set":item['keywords'],
@@ -301,8 +302,13 @@ class CommonGenDataset(Dataset):
                         for c in item['scene']:
                             c = c.strip()                 
                             c_output_ids = self.tokenizer(c, return_tensors="np")['input_ids'][0].tolist()
+                            
+                            if self.args.length_control:
 
-                            _concept_set_input_ids = self.tokenizer(f"Include:{concept_set}; Context:0; Target:{len(c_output_ids)}", return_tensors="np")['input_ids'][0].tolist()
+                                _concept_set_input_ids = self.tokenizer(f"Include:{concept_set}; Context:0; Target:{len(c_output_ids)}", return_tensors="np")['input_ids'][0].tolist()
+                            else:
+                                _concept_set_input_ids = self.tokenizer(f"Include:{concept_set}; Context:0; Target:0", return_tensors="np")['input_ids'][0].tolist()
+
 
                             self.record.append({
                                 "concept_set":item['concept_set'],
@@ -353,7 +359,12 @@ class C2Gen(Dataset):
 
             
             context = self.tokenizer(context, return_tensors="np")['input_ids'][0].tolist()
-            concept_set_input_ids = self.tokenizer(f"Include:{keyword}; Context:{len(context)}; Target:{self.args.generated_len}", return_tensors="np")['input_ids'][0].tolist()
+            
+            
+            if self.args.length_control:
+                concept_set_input_ids = self.tokenizer(f"Include:{keyword}; Context:{len(context)}; Target:{self.args.generated_len}", return_tensors="np")['input_ids'][0].tolist()
+            else: 
+                concept_set_input_ids = self.tokenizer(f"Include:{keyword}; Context:{len(context)}; Target:0", return_tensors="np")['input_ids'][0].tolist()
             
             self.record.append({
                         "item": [0],

@@ -2,7 +2,6 @@ from dataset.dataset_att import Sentiment_Dataset, Senti_Prompt_Data, get_data_l
 # from dataset.dataset_keyword import CommonGenDataset as kw_CommonGenDataset
 
 from dataset.wiki_dataset import WikiDataset, WikiDataset_General, get_wiki_data_loader
-# from dataset.e2e_dataset import Seq2SeqDataset, seq_get_data_loader
 
 
 import argparse
@@ -132,7 +131,7 @@ def construct_generation_args():
     parser.add_argument("--ranking_scope", type=int, default=50)
     
     
-    
+    parser.add_argument("--target_att", type=str, default="positive")
     parser.add_argument("--corpus_type", type=str, default="positive")
     parser.add_argument("--disc_embedding_checkpoint", type=str, default= None)
     parser.add_argument("--template_disc", type=str, default="(2, 3)")
@@ -148,6 +147,7 @@ def construct_generation_args():
 
     
     # parser.add_argument("--pattern", type=str, default="vanilla", choices=["dynamic_prompt_max","dynamic_prompt_mean","dynamic_prompt_hybird","vanilla"])
+    
     parser.add_argument("--tuning_mode", type=str, default="pt", choices=["fp","pt"])
     parser.add_argument("--pretrain_plm", type=str, default="gpt", choices=["gpt","t5"])
     parser.add_argument("--train_stage", type=str, default="fine_tuning", choices=["fine_tuning","general_pretrain","control_pretrain"])
@@ -182,6 +182,9 @@ def construct_generation_args():
     parser.add_argument('--test', action='store_true')
     
     parser.add_argument('--saving_model', action='store_true')
+    
+    parser.add_argument('--distribution_constraint', action='store_false')
+
 
     
     args = parser.parse_args()
@@ -215,8 +218,11 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
             
             input_ids =  batch["input_ids"].to(args.device).long()
             
-            # encode_inputs =  batch["encode_input"].to(args.device).long() 
-            encode_inputs =  batch["encode_input_"].to(args.device).long()
+            
+            if args.target_att == "positive":
+                encode_inputs =  batch["encode_input"].to(args.device).long() 
+            else:
+                encode_inputs =  batch["encode_input_"].to(args.device).long()
                 
             attention_mask = batch["attention_mask"].to(args.device).bool()
                         
@@ -232,7 +238,7 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
                 repetition_penalty=1.25,
                 top_k = 0,
                 no_repeat_ngram_size = 3,
-                do_sample= True, # disable sampling to test if batching affects output
+                do_sample= False, # disable sampling to test if batching affects output
             )
             
             # end = datetime.datetime.now()
@@ -261,11 +267,12 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
     if args.validation or args.test:
         
         for c,g,r in zip(context_part, gens_part, res):
+            
             dict_data = {
                 "context":c,
                 "generated":g,
                 "text":r}
-            addCsv(output_path+f"/generated_result_{args.generated_len}_seed_{args.seed}.csv", dict_data)
+            addCsv(output_path+f"/generated_result_{args.target_att}_seed_{args.seed}.csv", dict_data)
         print("The result is generated!")
     
 
@@ -345,10 +352,8 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     tokenizer.pad_token = tokenizer.eos_token
     
-        
     model = Prompt_Residual_Tuning.from_pretrained(args.model_name_or_path)
     model.init_post(args)    
-
         
     
     if args.check_point_load != None and  hasattr(model, 'prompt_encoder'):
@@ -372,7 +377,6 @@ if __name__ == "__main__":
         
         
     
-    
     if args.train:
 
         params = [{'params': model.prompt_encoder.parameters()}]
@@ -388,12 +392,8 @@ if __name__ == "__main__":
         print("train_data:", len(train_data))
         train_data_loader = get_data_loader(train_data, args.batch_size)
             
-
         task_train(args, model, tokenizer, train_data_loader, None, None, optimizer, my_lr_scheduler)
-            
-
-
-        
+                    
 
         
     else:

@@ -1,12 +1,11 @@
-test_path="/home2/zhanghanqing/Future_decoding/model/datasets/sentiment_prompts-10k/negative_prompts.jsonl"
+test_path="../data/sentiment/test/positive_prompts.jsonl"
 
-pretrain_path="/home2/zhanghanqing/formatted_wikipedia"
-pretrain_path_val="/home2/zhanghanqing/formatted_wiki_val"
-long_test_path="../../data/c2gen.json"
+pretrain_path="xxx"
+pretrain_path_val="xxx"
+long_test_path="../data/c2gen.json"
 
 model_name_or_path="/home2/zhanghanqing/pretrained_model/gpt2/large"
-# check_point_load="../check_point/trained/prompt_model/layer_3_epoch_1_metric_2023-05-04_11:06:31.064469_0.5.ckpt"
-check_point_load="../check_point/trained/prompt_model/layer_3_epoch_1_metric_2023-05-05_22:17:44.979700_0.5.ckpt"
+check_point_load="../check_point_load/attribute/top_095_k110.ckpt"
 
 ranking_scope=30
 

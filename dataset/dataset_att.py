@@ -144,8 +144,11 @@ class Senti_Prompt_Data(Dataset):
         with open(str(json_path), "r+", encoding="utf8") as f:
             for item in jsonlines.Reader(f):
                 prompt = item["prompt"]["text"]
-            
+                
                 context = self.tokenizer(prompt.strip(), return_tensors="np")['input_ids'][0].tolist()
+                
+                if len(context)<1:
+                    continue
                 
                 concept_set_input_ids = self.tokenizer(f"Sentiment: Positive", return_tensors="np")['input_ids'][0].tolist()
                 concept_set_input_ids_ = self.tokenizer(f"Sentiment: Negative", return_tensors="np")['input_ids'][0].tolist()

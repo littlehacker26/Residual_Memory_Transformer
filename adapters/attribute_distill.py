@@ -56,7 +56,7 @@ class Residual_Model(nn.Module):
         inp = tgt[0]
         
         for layer_module in  self.decoder_block:
-            inp = layer_module(tgt =inp, tgt_ =tgt[-1], memory=memory, tgt_key_padding_mask = tgt_mask, memory_key_padding_mask=memory_mask, tgt_mask=att_mask)
+            inp = layer_module(tgt =inp, tgt_ =tgt, memory=memory, tgt_key_padding_mask = tgt_mask, memory_key_padding_mask=memory_mask, tgt_mask=att_mask)
  
         return self.lm_head(inp)
     
@@ -109,7 +109,7 @@ class Distill_Tuning(GPT2LMHeadModel):
         logits,
         top_k = 0,
         top_p = 1.0,
-        filter_value = -1e15 ,
+        filter_value = BIG_CONST ,
         min_tokens_to_keep = 1,
     ):
         """Filter a distribution of logits using top-k and/or nucleus (top-p) filtering
@@ -143,6 +143,7 @@ class Distill_Tuning(GPT2LMHeadModel):
             # scatter sorted tensors to original indexing
             indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
             logits[indices_to_remove] = filter_value
+            
         return logits
         
     
@@ -311,12 +312,19 @@ class Distill_Tuning(GPT2LMHeadModel):
             
             reank_output_neg = (logits_candidate>BIG_CONST+10).mul(1-reank_output)
             neg_loss = self.KL_loss(torch.softmax(_logits, dim=-1), reank_output_neg, attention_mask)
-
             loss= pos_loss+neg_loss
+            
         else:
             loss = None
+            
+            if  self.args.distribution_constraint:
+                logits_candidate = self.top_k_top_p_filtering(output_decoder.logits.view(output_decoder.logits.shape[0]*output_decoder.logits.shape[1], -1), top_k= 0 , top_p=0.98).view(logits.shape[0],logits.shape[1], -1)
+
+                logits_candidate[logits_candidate > BIG_CONST+10] = 0
+                logits = logits_candidate+logits
         
         output_decoder.loss = loss
         output_decoder.logits = logits
+        
         
         return output_decoder
