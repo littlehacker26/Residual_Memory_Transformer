@@ -1,6 +1,6 @@
 check_point/
-pretrain_result/
-eval/
+pretrain_result/*
+eval/*
 result/
 .ipynb_checkpoints/
 **/__pycache__
