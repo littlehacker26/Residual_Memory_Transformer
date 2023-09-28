@@ -1,7 +1,7 @@
 test_path="../data/word_include/commongen.test.jsonl"
 long_test_path="../data/word_include/c2gen.json"
 
-model_name_or_path="/home2/zhanghanqing/pretrained_model/gpt2/large"
+model_name_or_path="/home2/xxx/pretrained_model/gpt2/large"
 check_point_load="../check_point_load/commongen/common_gen_without_length_control.ckpt"
 
 

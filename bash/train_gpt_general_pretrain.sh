@@ -1,10 +1,10 @@
 train_path="../../data/commongen.train.jsonl"
 dev_path="../../data/commongen.dev.jsonl"
 test_path="../../data/commongen.test.jsonl"
-pretrain_path="/home2/zhanghanqing/formatted_wikipedia"
-pretrain_path_val="/home2/zhanghanqing/formatted_wiki_val"
+pretrain_path="/home2/xxx/formatted_wikipedia"
+pretrain_path_val="/home2/xxx/formatted_wiki_val"
 
-model_name_or_path="/home2/zhanghanqing/pretrained_model/gpt2/large"
+model_name_or_path="/home2/xxx/pretrained_model/gpt2/large"
 
 pretrain_plm="gpt"
 tuning_mode='pt'

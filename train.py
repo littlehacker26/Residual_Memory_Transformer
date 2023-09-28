@@ -1,8 +1,5 @@
 from dataset.dataset import CommonGenDataset, C2Gen, get_data_loader,keyword_CommonGenDataset, CommonGenDataset, Length_kw_Dataset, Length_CommonGenDataset
-# from dataset.dataset_keyword import CommonGenDataset as kw_CommonGenDataset
-
 from dataset.wiki_dataset import WikiDataset, WikiDataset_General, get_wiki_data_loader
-# from dataset.e2e_dataset import Seq2SeqDataset, seq_get_data_loader
 
 
 import argparse
@@ -93,8 +90,8 @@ def construct_generation_args():
     parser = argparse.ArgumentParser()
 
     # pre-parsing args
-    parser.add_argument("--model_name_or_path", type=str, default='/home/zhanghanqing/pretrained_model/gpt2/large')
-    parser.add_argument("--steer_model", type=str, default='/home/zhanghanqing/pretrained_model/gpt2/small')
+    parser.add_argument("--model_name_or_path", type=str, default='/home/xxx/pretrained_model/gpt2/large')
+    parser.add_argument("--steer_model", type=str, default='/home/xxx/pretrained_model/gpt2/small')
     parser.add_argument("--data_path", type=str, default='../data/pos_neg')
     
     parser.add_argument("--embedding_checkpoint", type=str, default=None)
@@ -142,7 +139,7 @@ def construct_generation_args():
     parser.add_argument("--tuning_mode", type=str, default="pt", choices=["fp","pt"])
     parser.add_argument("--train_stage", type=str, default="fine_tuning", choices=["fine_tuning","general_pretrain","control_pretrain"])
     parser.add_argument("--model_type", type=str, default="Vanilla_Prompt_Tuning", choices=["Residual_Tuning","Prompt_Residual_Tuning","Vanilla_Prompt_Tuning"])
-    parser.add_argument("--dataset", type=str, default="CommonGen", choices=["CommonGen","keyword","roc"])
+    parser.add_argument("--dataset", type=str, default="CommonGen", choices=["CommonGen","keyword"])
 
     parser.add_argument("--number_beam", type=int, default=4)
     # parser.add_argument("--top_k", type=int, default=3)
@@ -281,7 +278,7 @@ def run_eval(args, model, eval_data_iter, tokenizer, output_path=None):
         
     score_self_bleu = evaluator_selfbleu(res)
     
-    score_ppl = evaluator_ppl(res, "/home2/zhanghanqing/pretrained_model/gpt2/large")
+    score_ppl = evaluator_ppl(res, args.model_name_or_path)
     
     return {"coverage":cov,"self_bleu":score_self_bleu, "ppl": score_ppl}
 

@@ -19,6 +19,7 @@ If you have any questions during the implementation, please leave us comments, w
 
 * **CLM Models**
   - Please download the GPT2 models from the `huggingface.co` community.
+  
   |CLM Models|Parameters|Download Links|
   |:---|:---|:---|
   |gpt2-medium|355M|https://huggingface.co/gpt2-medium|

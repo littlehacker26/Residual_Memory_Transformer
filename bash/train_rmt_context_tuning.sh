@@ -6,11 +6,11 @@ pretrain_path="xxx"
 pretrain_path_val="xxxx"
 long_test_path="../data/word_include/c2gen.json"
 
-model_name_or_path="/home2/zhanghanqing/pretrained_model/gpt2/large"
+model_name_or_path="/home2/xxx/pretrained_model/gpt2/large"
 check_point_load="../check_point_load/pretrained_check.ckpt"
 
 pretrain_plm="gpt"
-train_stage="fine_tuning"
+train_stage="fine_tuning"xx
 tuning_mode='fp'
 model_type="Prompt_Residual_Tuning"
 dataset="keyword"

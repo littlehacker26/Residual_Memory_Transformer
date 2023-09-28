@@ -7,7 +7,7 @@ pretrain_path="xxx"
 pretrain_path_val="xxx"
 long_test_path="xxx"
 
-model_name_or_path="/home2/zhanghanqing/pretrained_model/gpt2/large"
+model_name_or_path="/home2/xxx/pretrained_model/gpt2/large"
 check_point_load="../check_point_load/pretrained_check.ckpt"
 
 ranking_scope=90

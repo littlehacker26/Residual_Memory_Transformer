@@ -92,8 +92,8 @@ def construct_generation_args():
     parser = argparse.ArgumentParser()
 
     # pre-parsing args
-    parser.add_argument("--model_name_or_path", type=str, default='/home/zhanghanqing/pretrained_model/gpt2/large')
-    parser.add_argument("--steer_model", type=str, default='/home/zhanghanqing/pretrained_model/gpt2/small')
+    parser.add_argument("--model_name_or_path", type=str, default='/home/xxx/pretrained_model/gpt2/large')
+    parser.add_argument("--steer_model", type=str, default='/home/xxx/pretrained_model/gpt2/small')
     parser.add_argument("--data_path", type=str, default='../data/pos_neg')
     
     parser.add_argument("--embedding_checkpoint", type=str, default=None)
@@ -149,10 +149,9 @@ def construct_generation_args():
     # parser.add_argument("--pattern", type=str, default="vanilla", choices=["dynamic_prompt_max","dynamic_prompt_mean","dynamic_prompt_hybird","vanilla"])
     
     parser.add_argument("--tuning_mode", type=str, default="pt", choices=["fp","pt"])
-    parser.add_argument("--pretrain_plm", type=str, default="gpt", choices=["gpt","t5"])
     parser.add_argument("--train_stage", type=str, default="fine_tuning", choices=["fine_tuning","general_pretrain","control_pretrain"])
     parser.add_argument("--model_type", type=str, default="Vanilla_Prompt_Tuning", choices=["Residual_Tuning","Prompt_Residual_Tuning","Vanilla_Prompt_Tuning"])
-    parser.add_argument("--dataset", type=str, default="CommonGen", choices=["CommonGen","keyword","roc"])
+    parser.add_argument("--dataset", type=str, default="CommonGen", choices=["CommonGen","keyword"])
 
 
     parser.add_argument("--number_beam", type=int, default=4)
