@@ -25,11 +25,17 @@ If you have any questions during the implementation, please leave us comments, w
   |gpt2-medium|355M|https://huggingface.co/gpt2-medium|
   |gpt2-large|774M|https://huggingface.co/gpt2-large|
   |gpt2-xl|1.5B|https://huggingface.co/gpt2-xl|
+  
+* **Check_Point Download**
+
+  - Please download the **check_point_load.zip** used in our experiments. [[Here is the download link]](https://drive.google.com/drive/folders/1khzxf4JBAak8Fy6qcTbAQhirMImd3jpq?usp=sharing)
+
+
 
 
 ## Data Description
 
-This part introduces the data (datasets.zip) used in our experiments.
+This part introduces the data used in our experiments.
 * **Pre-training** data `data/wikipedia`.
 * **Word inclusion** experimental data `data/word_include`.
 * **Sentiment** experimental data
