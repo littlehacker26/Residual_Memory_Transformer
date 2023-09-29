@@ -93,7 +93,7 @@ This part contains the RMT's training process.
   --dev_path    ## The path for validation data
   --test_path   ## The path for testing data
   --model_name_or_path    ## The path for the CLM models (GPT2)
-  --length_control      ## whether to add length control constraints, if --generated_len should be added in evaluation process
+  --length_control      ## whether to add length control constraints, if it is yes, --generated_len should be added in evaluation process
   --out_dir   ## the output directory to save the checkpoint.
   ```
   P.S. After training process is finished, the process will log the testing results, and output a result file with `csv` format.
@@ -116,7 +116,7 @@ This part contains the RMT's training process.
   --generated_len     ## required length control
   ```
 
-  P.S. The process will output the genenrated text, which is saved with the csv format.
+  P.S. The process will output the genenrated text, which is saved with the csv format. When adding length control constraints, please remember to remove all characters after '. ', since we use '.' as the end flag for the sentence length control.
 
 
 
