@@ -1,12 +1,11 @@
 # Controllable Text Generation with **R**esidual **M**emory **T**ransformer (RMT)
 
-This repository contains code, data, checkpoints, and training and evaluation instructions for the paper **"Controllable Text Generation with Residual Memory Transformer".**
+This repository contains code, data, checkpoints, and training and evaluation instructions for the paper [Controllable Text Generation with Residual Memory Transformer](http://arxiv.org/abs/2309.16231)
 
 If you have any questions during the implementation, please leave us comments, we will help you solve it as soon as possible.
 
 
 ## Dependence
-
 * **Environment**
   - Our code is built on the conda environment `python=3.9`.
 * **Packages**

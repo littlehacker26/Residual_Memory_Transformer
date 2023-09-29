@@ -5,9 +5,9 @@ data_/
 .ipynb_checkpoints/
 **/__pycache__
 check_point_load/
-data_pre_v1.py:
+data_pre_v1.py
 static.ipynb
-sentiment_classifier.ipynb
+sentiment.ipynb
 Untitled.ipynb
 sentiment-Copy1.ipynb
 /bash/eval_rmt_test_time.sh
